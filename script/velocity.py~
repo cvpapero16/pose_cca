@@ -1,0 +1,195 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+
+"""
+2016.2.16
+速度
+
+
+"""
+
+import sys
+import os.path
+import math
+import json
+import time
+from datetime import datetime
+import h5py
+import tqdm
+
+#calc
+import numpy as np
+from numpy import linalg as NLA
+import scipy as sp
+from scipy import linalg as SLA
+
+#GUI
+from PyQt4 import QtGui, QtCore
+from PyQt4.QtCore import *
+from PyQt4.QtGui  import *
+
+#plots
+import matplotlib.pyplot as plt
+
+#ROS
+import rospy
+
+class CCA(QtGui.QWidget):
+
+    def __init__(self):
+        super(CCA, self).__init__()
+        #UI
+        self.init_ui()
+        #ROS
+        #rospy.init_node('calccca', anonymous=True)
+
+
+    def init_ui(self):
+        grid = QtGui.QGridLayout()
+        form = QtGui.QFormLayout()
+        
+        #ファイル入力ボックス
+        self.txtSepFile = QtGui.QLineEdit()
+        btnSepFile = QtGui.QPushButton('...')
+        btnSepFile.setMaximumWidth(40)
+        btnSepFile.clicked.connect(self.choose_db_file)
+        boxSepFile = QtGui.QHBoxLayout()
+        boxSepFile.addWidget(self.txtSepFile)
+        boxSepFile.addWidget(btnSepFile)
+        form.addRow('input file', boxSepFile)
+        """
+        #ファイル出力
+        self.txtSepFileOut = QtGui.QLineEdit()
+        btnSepFileOut = QtGui.QPushButton('...')
+        btnSepFileOut.setMaximumWidth(40)
+        btnSepFileOut.clicked.connect(self.chooseOutFile)
+        boxSepFileOut = QtGui.QHBoxLayout()
+        boxSepFileOut.addWidget(self.txtSepFileOut)
+        boxSepFileOut.addWidget(btnSepFileOut)
+        form.addRow('output file', boxSepFileOut)    
+        """
+
+        #output file
+        boxFile = QtGui.QHBoxLayout()
+        btnOutput = QtGui.QPushButton('output')
+        btnOutput.clicked.connect(self.output)
+        boxFile.addWidget(btnOutput)
+        #form.addWidget(btnOutput)
+
+        #exec
+        boxCtrl = QtGui.QHBoxLayout()
+        btnExec = QtGui.QPushButton('exec')
+        btnExec.clicked.connect(self.do_exec)
+        #btnExec.clicked.connect(self.manyFileExec)
+        boxCtrl.addWidget(btnExec)
+ 
+        #配置
+        grid.addLayout(form,1,0)
+        grid.addLayout(boxCtrl,2,0)
+        grid.addLayout(boxFile,3,0)
+
+        self.setLayout(grid)
+        self.resize(400,100)
+
+        self.setWindowTitle("cca window")
+        self.show()
+
+    def choose_db_file(self):
+        dialog = QtGui.QFileDialog()
+        dialog.setFileMode(QtGui.QFileDialog.ExistingFile)
+        if dialog.exec_():
+            fileNames = dialog.selectedFiles()
+            for f in fileNames:
+                self.txtSepFile.setText(f)
+                return
+        return self.txtSepFile.setText('')
+
+    def do_exec(self):
+        print "exec start:",datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+
+        #input file
+        self.fname = str(self.txtSepFile.text())
+        self.data1,self.data2 = self.json_input(self.fname)
+        #calc velocity
+        self.vel1, self.vel2 = self.velocity(self.data1, self.data2)
+        
+        self.graph(self.vel1, self.vel2)
+        #print self.vel1.shape
+        print "end:",datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+
+
+    def json_input(self, filename):
+        f = open(filename, 'r')
+        jsp = json.load(f)
+        f.close()
+
+        poses = []
+        for user in jsp:
+            pos = []
+            psize = len(user["datas"][0]["jdata"])
+            #for j in range(self.dts):
+            for jdata in user["datas"]:
+                pls = []
+                for p in range(psize):
+                    pl = []
+                    for xyz in range(3):
+                        pl.append(jdata["jdata"][p][xyz])
+                    pls.append(pl)
+                pos.append(pls)
+            poses.append(pos)
+
+        return np.array(poses[0]), np.array(poses[1])
+
+
+    def velocity(self, data1, data2):
+        vel1 = []
+        vel2 = []
+        for idx in range(len(data1)-1):
+            vel1.append(self.distance(data1[idx+1], data1[idx]))
+            vel2.append(self.distance(data2[idx+1], data2[idx]))
+
+        return np.array(vel1), np.array(vel2)
+
+    def distance(self, d1, d2):
+        d = d2 - d1
+        return np.sqrt(np.sum(d**2, axis=1))
+
+    def output(self):
+        savefile = "vec_"+ self.fname.lstrip("/home/uema/catkin_ws/src/bodys_cca/datas/") 
+
+        print "filename:",savefile
+        f = open(savefile ,'w')
+
+        vs1 = []
+        vs2 = []
+        for (v1, v2) in zip(self.vel1, self.vel2):
+            vs1.append({"data":v1.tolist()})
+            vs2.append({"data":v2.tolist()})
+
+        data1 = {"datas":vs1}
+        data2 = {"datas":vs2}
+        js = [data1,data2]
+        jsons = json.dumps(js)
+        f.write(jsons)
+        f.close()
+        print "save end:",datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+
+    def graph(self, vel1, vel2):
+        vels = [vel1, vel2]
+
+        for n, vel in enumerate(vels):
+            row, col = vel.shape
+            for i in range(col):
+                plt.subplot(col, 2, i+(col*n))
+                plt.plot(vel[:,i])
+
+        plt.show()
+
+def main():
+    app = QtGui.QApplication(sys.argv)
+    corr = CCA()
+    #graph = GRAPH()
+    sys.exit(app.exec_())
+
+if __name__=='__main__':
+    main()
