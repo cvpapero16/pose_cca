@@ -351,7 +351,7 @@ class CCA(QtGui.QWidget):
         return data1, data2, poses[0], poses[1]
 
     def jidx_nidx_input(self):
-        f = open('/home/uema/catkin_ws/src/bodys_cca/script/joint_lines_index.json', 'r')
+        f = open('/home/uema/catkin_ws/src/pose_cca/script/joint_lines_index.json', 'r')
         jidx = json.load(f)
         f.close
         nidx = []

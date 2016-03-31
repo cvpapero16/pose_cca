@@ -21,6 +21,7 @@ import numpy as np
 from numpy import linalg as NLA
 import scipy as sp
 from scipy import linalg as SLA
+from scipy.spatial import distance as DIST
 
 #GUI
 from PyQt4 import QtGui, QtCore
@@ -459,6 +460,41 @@ class CCA(QtGui.QWidget):
         B = Bh.T      
 
         return r, A, B
+
+
+    def gaussian_kernel(x, y, var=1.0):
+        return np.exp(-np.linalg.norm(x - y) ** 2 / (2 * var))
+
+    def polynomial_kernel(x, y, c=1.0, d=2.0):
+        return (np.dot(x, y) + c) ** d
+
+    def kcca(self, X, Y, kernel_x=gaussian_kernel, kernel_y=gaussian_kernel, eta=1.0):
+        n, p = X.shape
+        n, q = Y.shape
+        
+        Kx = DIST.squareform(DIST.pdist(X, kernel_x))
+        Ky = DIST.squareform(DIST.pdist(Y, kernel_y))
+        J = np.eye(n) - np.ones((n, n)) / n
+        M = np.dot(np.dot(Kx.T, J), Ky) / n
+        L = np.dot(np.dot(Kx.T, J), Kx) / n + eta * Kx
+        N = np.dot(np.dot(Ky.T, J), Ky) / n + eta * Ky
+
+
+        sqx = SLA.sqrtm(SLA.inv(L))
+        sqy = SLA.sqrtm(SLA.inv(N))
+        
+        a = np.dot(np.dot(sqx, M), sqy.T)
+        A, s, Bh = SLA.svd(a, full_matrices=False)
+        B = Bh.T
+        
+        # U = np.dot(np.dot(A.T, sqx), X).T
+        # V = np.dot(np.dot(B.T, sqy), Y).T
+        print s.shape
+        print A.shape
+        print B.shape
+        return s, A, B
+
+
 
 def main():
     app = QtGui.QApplication(sys.argv)
