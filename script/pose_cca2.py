@@ -76,6 +76,15 @@ class Plot():
         """
         self.rho_area.set_xlim(0, dc)
         self.rho_area.set_ylim(0, dr)
+
+        wid = 10 #とりあえず決め打ちで10ずつ目盛表示
+        ticks = [i*wid for i in range(dr/wid+1)]
+        labels = [(dr-1)/2-i*wid for i in range(dr/wid+1)]
+        self.rho_area.set_yticks(ticks=ticks)
+        self.rho_area.set_yticklabels(labels=labels)
+        self.rho_area.set_xlabel("user 1")
+        self.rho_area.set_ylabel("user 2")
+
         self.rho_area.tick_params(labelsize=fs)
         self.rho_area.set_title("rho", fontsize=fs+1)
         self.fig.canvas.draw()
@@ -88,8 +97,7 @@ class CCA(QtGui.QWidget):
         #UI
         self.init_ui()
         #ROS
-        rospy.init_node('calccca', anonymous=True)
-
+        rospy.init_node('pose_cca', anonymous=True)
 
     def init_ui(self):
         grid = QtGui.QGridLayout()
@@ -104,17 +112,20 @@ class CCA(QtGui.QWidget):
         boxSepFile.addWidget(self.txtSepFile)
         boxSepFile.addWidget(btnSepFile)
         form.addRow('input file', boxSepFile)
-        """
-        #ファイル出力
-        self.txtSepFileOut = QtGui.QLineEdit()
-        btnSepFileOut = QtGui.QPushButton('...')
-        btnSepFileOut.setMaximumWidth(40)
-        btnSepFileOut.clicked.connect(self.chooseOutFile)
-        boxSepFileOut = QtGui.QHBoxLayout()
-        boxSepFileOut.addWidget(self.txtSepFileOut)
-        boxSepFileOut.addWidget(btnSepFileOut)
-        form.addRow('output file', boxSepFileOut)    
-        """
+
+        #window size
+        self.dataStart = QtGui.QLineEdit()
+        self.dataStart.setText('0')
+        self.dataStart.setFixedWidth(70)
+        self.dataEnd = QtGui.QLineEdit()
+        self.dataEnd.setText('1000')
+        self.dataEnd.setFixedWidth(70)
+
+        boxDatas = QtGui.QHBoxLayout()
+        boxDatas.addWidget(self.dataStart)
+        boxDatas.addWidget(self.dataEnd)
+        form.addRow('data range', boxDatas)
+
         #window size
         self.winSizeBox = QtGui.QLineEdit()
         self.winSizeBox.setText('90')
@@ -124,10 +135,10 @@ class CCA(QtGui.QWidget):
 
         #frame size
         self.frmSizeBox = QtGui.QLineEdit()
-        self.frmSizeBox.setText('110')
+        self.frmSizeBox.setText('50')
         self.frmSizeBox.setAlignment(QtCore.Qt.AlignRight)
         self.frmSizeBox.setFixedWidth(100)
-        form.addRow('frame size', self.frmSizeBox)
+        form.addRow('offset frames', self.frmSizeBox)
 
         # regulation
         self.regBox = QtGui.QLineEdit()
@@ -138,13 +149,8 @@ class CCA(QtGui.QWidget):
 
         rHLayout = QtGui.QHBoxLayout()
         self.radios = QtGui.QButtonGroup()
-        self.selected = QtGui.QRadioButton('dimension')
-        self.radios.addButton(self.selected)
         self.allSlt = QtGui.QRadioButton('all frame')
         self.radios.addButton(self.allSlt)
-        #form.addRow('dimension', self.selected)
-        #form.addRow('select', self.allSlt)
-        rHLayout.addWidget(self.selected)
         rHLayout.addWidget(self.allSlt)
         form.addRow('select', rHLayout)
  
@@ -179,13 +185,10 @@ class CCA(QtGui.QWidget):
         self.plot = Plot(self.main_frame)
         boxPlot.addWidget(self.plot.canvas)
 
-
         #配置
         grid.addLayout(form,1,0)
         grid.addLayout(boxCtrl,2,0)
-        #grid.addLayout(boxPlot,3,0)
         grid.addLayout(boxFile,3,0)
-
         grid.addLayout(boxPlot,4,0)
 
         self.setLayout(grid)
@@ -215,21 +218,16 @@ class CCA(QtGui.QWidget):
         # input file
         self.fname = str(self.txtSepFile.text())
         self.data1, self.data2, self.dts, self.dtd = self.json_pose_input(self.fname)
-        #print "datas diff1",self.data1-self.data2
-        #print self.data1.shape
         # select joints
         self.data1, self.data2 = self.select_datas(self.data1, self.data2)
-        #print "datas diff2",self.data1-self.data2
         # if data is big then...
-        self.data1, self.data2 = self.cut_datas(self.data1, self.data2, 2000)
-        #print "datas diff3",self.data1-self.data2
-        # data size update!
+        start, end = int(self.dataStart.text()), int(self.dataEnd.text())
+        self.data1, self.data2 = self.cut_datas(self.data1, self.data2, start, end)
+        # data size update
         self.pre_dtd = self.dtd
         self.dts, self.dtd = self.data1.shape
         # data normalization
         self.data1, self.data2, self.org1, self.org2 = self.normalize_datas(self.data1, self.data2)
-
-
 
         #ws:window_size, fs:frame_size 
         self.wins = int(self.winSizeBox.text())
@@ -238,23 +236,17 @@ class CCA(QtGui.QWidget):
             print "frame all"
             self.frms = self.dts
 
-        #dmr:data_max_range, frmr:frame_range, dtr:data_range
+        #dtmr:data_max_range,
         self.dtmr = self.dts - self.wins + 1
-        self.frmr = self.dts - self.frms + 1
-        self.dtr = self.frms - self.wins + 1
 
         print "datas_size:",self.dts
         print "frame_size:",self.frms
         print "data_max_range:",self.dtmr
-        print "frame_range:",self.frmr
-        print "data_range:",self.dtr
 
         #rho_m:rho_matrix[dmr, dmr, datadimen] is corrs
         #wx_m and wy_m is vectors
         self.reg = float(self.regBox.text())
         self.r_m, self.wx_m, self.wy_m = self.cca_exec(self.data1, self.data2)
-
-        #print self.r_m
 
         #graph
         self.rhoplot()
@@ -273,17 +265,6 @@ class CCA(QtGui.QWidget):
         datas = [[u["datas"][j]["data"] for j in range(ds)] for u in jD]
         return np.array(datas[0]), np.array(datas[1]), ds, dd
 
-    """
-    #この書き方はjointの順番がバラバラになる
-    def json_pose_input(self, filename):
-        f = open(filename, 'r')
-        jD = json.load(f)
-        f.close()
-        #pose
-        ds, dd, dp = len(jD[0]["datas"]), len(jD[0]["datas"][0]["jdata"]), len(jD[0]["datas"][0]["jdata"][0])  
-        datas=[[[u["datas"][t]["jdata"][p][i]for i in range(dp) for p in range(dd)] for t in range(ds)] for u in jD]  
-        return np.array(datas[0]), np.array(datas[1]), ds, dd*dp
-    """
     def json_pose_input(self, filename):
         f = open(filename, 'r');
         jD = json.load(f)
@@ -309,7 +290,7 @@ class CCA(QtGui.QWidget):
 
     def save_params(self):
 
-        save_dimen=3 #self.dtd
+        save_dimen=1 #self.dtd
 
         savefile = "save_w"+str(self.wins)+"_f"+str(self.frms) +"_d"+str(self.dtd)+"_r"+str(self.reg)+"_"+ self.fname.lstrip("/home/uema/catkin_ws/src/pose_cca/datas/") 
         savefile = savefile.rstrip(".json")
@@ -387,73 +368,34 @@ class CCA(QtGui.QWidget):
         self.sIdx = [0,1,2,3,4,5,6,8,9,10,12,13,14,16,17,18,20]
         new_sid = [sid*3+i  for sid in self.sIdx for i in xrange(3)]
         self.sIdx = new_sid
-        print self.sIdx
+        #print self.sIdx
         return data1[:,self.sIdx],  data2[:,self.sIdx]
 
-    def cut_datas(self, data1, data2, th): 
-        if self.dts < th:
-            return data1, data2
+    def cut_datas(self, data1, data2, start, end): 
+        #print "s/e",start, end
+        if start <= end and end <= self.dts:
+            return data1[start:end,:], data2[start:end,:]
         else:
-            return data1[0:th,:], data2[0:th,:]
+            print "no cut"
+            return data1, data2
+        
 
     def cca_exec(self, data1, data2):
         #rho_m:rho_matrix[dmr, dmr, datadimen] is corrs
         #wx_m and wy_m is vectors
         data1 = np.array(data1)
         data2 = np.array(data2)
-        
-        
-        #r_m = np.zeros([self.dtmr, self.dtmr, self.dtd])
-        #wx_m = np.zeros([self.dtmr, self.dtmr, self.dtd, self.dtd])
-        #wy_m = np.zeros([self.dtmr, self.dtmr, self.dtd, self.dtd])
-
-
         r_m = np.zeros([self.frms*2+1, self.dtmr, self.dtd])
         wx_m = np.zeros([self.frms*2+1, self.dtmr, self.dtd, self.dtd])
         wy_m = np.zeros([self.frms*2+1, self.dtmr, self.dtd, self.dtd])
-
-
         #row->colの順番で回したほうが効率いい
         for i in tqdm.tqdm(xrange(self.dtmr)):
             for j in xrange(self.frms*2+1):
                 if self.frms+i-j >= 0 and self.frms+i-j < self.dtmr:
                     u1 = data1[i:i+self.wins,:]                
                     u2 = data2[self.frms+i-j:self.frms+i-j+self.wins,:]
-                    #print "i:",i,",j:",j," row:",self.frms+i-j,",col:",i,"---u1.s:",u1.shape,",u2.s:",u2.shape
                     r_m[j][i], wx_m[j][i], wy_m[j][i] = self.cca(u1, u2)
-        print "r_m:",r_m.shape, "wx_m:",wx_m.shape
-        """
-        for i in tqdm.tqdm(xrange(self.frms*2+1)):
-            for j in tqdm.tqdm(xrange(self.dtmr)):
-                if j < self.dtmr-self.frms+i:
-                    u1 = data1[j:j+self.wins,:]
-                    u2 = data2[self.frms-j:self.frms-j+self.wins,:]
-                    r_m[i][j], wx_m[i][j], wy_m[i][j] = self.cca(u1, u2)
-        """     
-
-        """
-        for f in tqdm.tqdm(xrange(self.frmr)):
-            #self.pBar.setValue(f)
-            if f == 0:
-                for t1 in tqdm.tqdm(range(self.dtr)):
-                    for t2 in xrange(self.dtr):
-                        u1 = data1[f+t1:f+t1+self.wins,:]
-                        u2 = data2[f+t2:f+t2+self.wins,:]
-                        r_m[f+t1][f+t2], wx_m[f+t1][f+t2], wy_m[f+t1][f+t2] = self.cca(u1, u2)
-            else:
-                od = f+self.dtr-1
-                for t1 in xrange(self.dtr-1):
-                    u1 = data1[f+t1:f+t1+self.wins,:]
-                    u2 = data2[od:od+self.wins,:]
-                    r_m[f+t1][od], wx_m[f+t1][od], wy_m[f+t1][od] = self.cca(u1, u2)
-                for t2 in xrange(self.dtr):
-                    u1 = data1[od:od+self.wins,:]
-                    u2 = data2[f+t2:f+t2+self.wins,:]
-                    r_m[od][f+t2], wx_m[od][f+t2], wy_m[od][f+t2] = self.cca(u1, u2)
-        """
-
         return r_m, wx_m, wy_m
-
 
     def cca(self, X, Y):
         '''
@@ -472,17 +414,14 @@ class CCA(QtGui.QWidget):
         # covariances
         S = np.cov(X.T, Y.T, bias=1)
         
-        # S = np.corrcoef(X.T, Y.T)
         SXX = S[:p,:p]
         SYY = S[p:,p:]
         SXY = S[:p,p:]
-        #SYX = S[p:,:p]
-        
+
         #正則化
         Rg = np.diag(np.ones(p)*self.reg)
         SXX = SXX + Rg
         SYY = SYY + Rg
-        #SXY = SXY + Rg
 
         sqx = SLA.sqrtm(SLA.inv(SXX)) # SXX^(-1/2)
         sqy = SLA.sqrtm(SLA.inv(SYY)) # SYY^(-1/2)
@@ -492,7 +431,7 @@ class CCA(QtGui.QWidget):
 
         return r, A, B
 
-
+    """
     def gaussian_kernel(x, y, var=1.0):
         return np.exp(-np.linalg.norm(x - y) ** 2 / (2 * var))
 
@@ -524,8 +463,7 @@ class CCA(QtGui.QWidget):
         print A.shape
         print B.shape
         return s, A, B
-
-
+    """
 
 def main():
     app = QtGui.QApplication(sys.argv)
