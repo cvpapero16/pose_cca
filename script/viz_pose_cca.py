@@ -186,7 +186,7 @@ class Plot():
     """
     def draw_rho(self):
         dr, dc = self.r_m.shape
-        Y, X = np.mgrid[slice(0, dc+1, 1),slice(0, dr+1, 1)]
+        Y, X = np.mgrid[slice(0, dr+1, 1),slice(0, dc+1, 1)]
         img = self.rho_area.pcolor(X, Y, self.r_m, vmin=0.0, vmax=1.0, cmap=cm.gray)
         
         #if self.cbar == None:

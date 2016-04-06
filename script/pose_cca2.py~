@@ -2,6 +2,10 @@
 # -*- coding: utf-8 -*-
 
 """
+2016.4.5
+データの保存形式を変更する
+見やすくする+メモリ節約のため
+
 2016.3.24
 x, y, zを利用する
 
@@ -217,7 +221,7 @@ class CCA(QtGui.QWidget):
         self.data1, self.data2 = self.select_datas(self.data1, self.data2)
         #print "datas diff2",self.data1-self.data2
         # if data is big then...
-        self.data1, self.data2 = self.cut_datas(self.data1, self.data2, 400)
+        self.data1, self.data2 = self.cut_datas(self.data1, self.data2, 4000)
         #print "datas diff3",self.data1-self.data2
         # data size update!
         self.pre_dtd = self.dtd
@@ -397,10 +401,37 @@ class CCA(QtGui.QWidget):
         #wx_m and wy_m is vectors
         data1 = np.array(data1)
         data2 = np.array(data2)
-        r_m = np.zeros([self.dtmr, self.dtmr, self.dtd])
-        wx_m = np.zeros([self.dtmr, self.dtmr, self.dtd, self.dtd])
-        wy_m = np.zeros([self.dtmr, self.dtmr, self.dtd, self.dtd])
+        
+        
+        #r_m = np.zeros([self.dtmr, self.dtmr, self.dtd])
+        #wx_m = np.zeros([self.dtmr, self.dtmr, self.dtd, self.dtd])
+        #wy_m = np.zeros([self.dtmr, self.dtmr, self.dtd, self.dtd])
 
+
+        r_m = np.zeros([self.frms*2+1, self.dtmr, self.dtd])
+        wx_m = np.zeros([self.frms*2+1, self.dtmr, self.dtd, self.dtd])
+        wy_m = np.zeros([self.frms*2+1, self.dtmr, self.dtd, self.dtd])
+
+
+        #row->colの順番で回したほうが効率いい
+        for i in tqdm.tqdm(xrange(self.dtmr)):
+            for j in xrange(self.frms*2+1):
+                if self.frms+i-j >= 0 and self.frms+i-j < self.dtmr:
+                    u1 = data1[i:i+self.wins,:]                
+                    u2 = data2[self.frms+i-j:self.frms+i-j+self.wins,:]
+                    #print "i:",i,",j:",j," row:",self.frms+i-j,",col:",i,"---u1.s:",u1.shape,",u2.s:",u2.shape
+                    r_m[j][i], wx_m[j][i], wy_m[j][i] = self.cca(u1, u2)
+        print "r_m:",r_m.shape, "wx_m:",wx_m.shape
+        """
+        for i in tqdm.tqdm(xrange(self.frms*2+1)):
+            for j in tqdm.tqdm(xrange(self.dtmr)):
+                if j < self.dtmr-self.frms+i:
+                    u1 = data1[j:j+self.wins,:]
+                    u2 = data2[self.frms-j:self.frms-j+self.wins,:]
+                    r_m[i][j], wx_m[i][j], wy_m[i][j] = self.cca(u1, u2)
+        """     
+
+        """
         for f in tqdm.tqdm(xrange(self.frmr)):
             #self.pBar.setValue(f)
             if f == 0:
@@ -419,6 +450,7 @@ class CCA(QtGui.QWidget):
                     u1 = data1[od:od+self.wins,:]
                     u2 = data2[f+t2:f+t2+self.wins,:]
                     r_m[od][f+t2], wx_m[od][f+t2], wy_m[od][f+t2] = self.cca(u1, u2)
+        """
 
         return r_m, wx_m, wy_m
 
@@ -430,7 +462,6 @@ class CCA(QtGui.QWidget):
         '''    
         #X = np.array(X)
         #Y = np.array(Y)
-        #print X.shape
         n, p = X.shape
         n, q = Y.shape
         
