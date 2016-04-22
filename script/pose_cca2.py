@@ -2,6 +2,10 @@
 # -*- coding: utf-8 -*-
 
 """
+2016.4.20
+データを複数回に分けて保存する
+でかすぎるデータを一気に保存すると強制終了
+
 2016.4.5
 データの保存形式を変更する
 見やすくする+メモリ節約のため
@@ -218,11 +222,12 @@ class CCA(QtGui.QWidget):
         # input file
         self.fname = str(self.txtSepFile.text())
         self.data1, self.data2, self.dts, self.dtd = self.json_pose_input(self.fname)
+        self.times = self.json_time_input(self.fname)
         # select joints
         self.data1, self.data2 = self.select_datas(self.data1, self.data2)
         # if data is big then...
         start, end = int(self.dataStart.text()), int(self.dataEnd.text())
-        self.data1, self.data2 = self.cut_datas(self.data1, self.data2, start, end)
+        self.data1, self.data2, self.start, self.end = self.cut_datas(self.data1, self.data2, start, end)
         # data size update
         self.pre_dtd = self.dtd
         self.dts, self.dtd = self.data1.shape
@@ -287,13 +292,22 @@ class CCA(QtGui.QWidget):
 
         return np.array(datas[0]), np.array(datas[1]), ds, dd*dp
 
+    def json_time_input(self, filename):
+        f = open(filename, 'r')
+        jD = json.load(f)
+        f.close()
+        times = []
+        if jD[0]["datas"][0].has_key("time"): 
+            for tobj in jD[0]["datas"]:
+                times.append(tobj["time"])
+        else:
+            print "[WARN] no time data!"
+        return times        
 
     def save_params(self):
-
         save_dimen=1 #self.dtd
-
-        savefile = "save_w"+str(self.wins)+"_f"+str(self.frms) +"_d"+str(self.dtd)+"_r"+str(self.reg)+"_"+ self.fname.lstrip("/home/uema/catkin_ws/src/pose_cca/datas/") 
-        savefile = savefile.rstrip(".json")
+        savefile = "save_"+ self.fname.lstrip("/home/uema/catkin_ws/src/pose_cca/datas/")
+        savefile = savefile.rstrip(".json")+"_w"+str(self.wins)+"_f"+str(self.frms) +"_d"+str(self.dtd)+"_r"+str(self.reg)+"_s"+str(self.start)+"_e"+str(self.end) 
         filepath = savefile+".h5"
         print filepath+" is save"
         with h5py.File(filepath, 'w') as f:
@@ -309,12 +323,14 @@ class CCA(QtGui.QWidget):
             p_grp.create_dataset("org1",data=self.org1)
             p_grp.create_dataset("org2",data=self.org2)
             c_grp=f.create_group("cca")
-            r_grp=c_grp.create_group("r")
-            wx_grp=c_grp.create_group("wx")
-            wy_grp=c_grp.create_group("wy")
+            c_grp.create_dataset("times", data=self.times)
             d_grp=c_grp.create_group("data")
             d_grp.create_dataset("data1", data=self.data1)
             d_grp.create_dataset("data2", data=self.data2)
+            r_grp=c_grp.create_group("r")
+            wx_grp=c_grp.create_group("wx")
+            wy_grp=c_grp.create_group("wy")
+
             for i in xrange(save_dimen):
                 r_grp.create_dataset(str(i),data=self.r_m[:,:,i])
                 wx_v_grp = wx_grp.create_group(str(i))
@@ -324,6 +340,74 @@ class CCA(QtGui.QWidget):
                     wy_v_grp.create_dataset(str(j),data=self.wy_m[:,:,j,i])
 
             f.flush()
+        print "save end:",datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+
+    def save_params2(self):
+        save_dimen=1 #self.dtd
+        savefile = "save_"+ self.fname.lstrip("/home/uema/catkin_ws/src/pose_cca/datas/")
+        savefile = savefile.rstrip(".json")+"_w"+str(self.wins)+"_f"+str(self.frms) +"_d"+str(self.dtd)+"_r"+str(self.reg)+"_s"+str(self.start)+"_e"+str(self.end) 
+        filepath = savefile+".h5"
+        print filepath+" is save"
+        with h5py.File(filepath, 'w') as f:
+            p_grp=f.create_group("prop")
+            p_grp.create_dataset("wins",data=self.wins)
+            p_grp.create_dataset("frms",data=self.frms)
+            p_grp.create_dataset("dtd",data=self.dtd)
+            p_grp.create_dataset("pre_dtd",data=self.pre_dtd)
+            p_grp.create_dataset("dts",data=self.dts) 
+            p_grp.create_dataset("fname",data=self.fname)
+            p_grp.create_dataset("sidx",data=self.sIdx)
+            p_grp.create_dataset("reg",data=self.reg)
+            p_grp.create_dataset("org1",data=self.org1)
+            p_grp.create_dataset("org2",data=self.org2)
+
+            c_grp=f.create_group("cca")
+            c_grp.create_dataset("times", data=self.times)
+
+            # 生データ保存
+            d_grp=c_grp.create_group("data")
+            d_grp.create_dataset("data1", data=self.data1)
+            d_grp.create_dataset("data2", data=self.data2)
+
+            # 処理結果の保存
+            rslt_dts = self.r_m.shape[1]
+            rng = 1000
+            p_grp.create_dataset("rng",data=rng)
+
+            sp = 0
+            while True:
+                print "sp:",sp
+                if (sp+1)*rng < rslt_dts:
+                    print "rslt_dts:", rslt_dts, "rng*(sp+1)",rng*(sp+1)
+                    sp_grp = c_grp.create_group(str(sp*rng)+"-"+str((sp+1)*rng))
+                    r_grp = sp_grp.create_group("r")
+                    wx_grp = sp_grp.create_group("wx")
+                    wy_grp = sp_grp.create_group("wy")
+                    for i in tqdm.tqdm(xrange(save_dimen)):
+                        r_grp.create_dataset(str(i),data=self.r_m[:,sp*rng:(sp+1)*rng,i])
+                        wx_v_grp = wx_grp.create_group(str(i))
+                        wy_v_grp = wy_grp.create_group(str(i))
+                        for j in tqdm.tqdm(xrange(self.dtd)):
+                            wx_v_grp.create_dataset(str(j),data=self.wx_m[:,sp*rng:(sp+1)*rng,j,i])
+                            wy_v_grp.create_dataset(str(j),data=self.wy_m[:,sp*rng:(sp+1)*rng,j,i])
+                            f.flush()
+                else:
+                    sp_grp = c_grp.create_group(str(sp*rng)+"-"+str(rslt_dts-1))
+                    r_grp = sp_grp.create_group("r")
+                    wx_grp = sp_grp.create_group("wx")
+                    wy_grp = sp_grp.create_group("wy")
+                    for i in tqdm.tqdm(xrange(save_dimen)):
+                        r_grp.create_dataset(str(i),data=self.r_m[:,sp*rng:rslt_dts-1,i])
+                        wx_v_grp = wx_grp.create_group(str(i))
+                        wy_v_grp = wy_grp.create_group(str(i))
+                        for j in tqdm.tqdm(xrange(self.dtd)):
+                            wx_v_grp.create_dataset(str(j),data=self.wx_m[:,sp*rng:rslt_dts-1,j,i])
+                            wy_v_grp.create_dataset(str(j),data=self.wy_m[:,sp*rng:rslt_dts-1,j,i])
+                            f.flush()
+                    break
+                sp += 1
+            f.flush()
+            f.close()
         print "save end:",datetime.now().strftime("%Y/%m/%d %H:%M:%S")
 
 
@@ -374,10 +458,10 @@ class CCA(QtGui.QWidget):
     def cut_datas(self, data1, data2, start, end): 
         #print "s/e",start, end
         if start <= end and end <= self.dts:
-            return data1[start:end,:], data2[start:end,:]
+            return data1[start:end,:], data2[start:end,:], start, end
         else:
             print "no cut"
-            return data1, data2
+            return data1, data2, 0, self.dts
         
 
     def cca_exec(self, data1, data2):
@@ -428,7 +512,7 @@ class CCA(QtGui.QWidget):
         M = np.dot(np.dot(sqx, SXY), sqy.T) # SXX^(-1/2) * SXY * SYY^(-T/2)
         A, r, Bh = SLA.svd(M, full_matrices=False)
         B = Bh.T      
-
+        #r = self.reg*r
         return r, A, B
 
     """

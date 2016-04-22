@@ -217,7 +217,7 @@ class CCA(QtGui.QWidget):
         self.data1, self.data2 = self.select_datas(self.data1, self.data2)
         #print "datas diff2",self.data1-self.data2
         # if data is big then...
-        self.data1, self.data2 = self.cut_datas(self.data1, self.data2, 400)
+        #self.data1, self.data2 = self.cut_datas(self.data1, self.data2, 400)
         #print "datas diff3",self.data1-self.data2
         # data size update!
         self.pre_dtd = self.dtd
@@ -451,14 +451,15 @@ class CCA(QtGui.QWidget):
         Rg = np.diag(np.ones(p)*self.reg)
         SXX = SXX + Rg
         SYY = SYY + Rg
-        #SXY = SXY + Rg
 
         sqx = SLA.sqrtm(SLA.inv(SXX)) # SXX^(-1/2)
         sqy = SLA.sqrtm(SLA.inv(SYY)) # SYY^(-1/2)
         M = np.dot(np.dot(sqx, SXY), sqy.T) # SXX^(-1/2) * SXY * SYY^(-T/2)
         A, r, Bh = SLA.svd(M, full_matrices=False)
-        B = Bh.T      
-
+        B = Bh.T     
+        #A = np.dot(SLA.sqrtm(SXX), A)
+        #B = np.dot(SLA.sqrtm(SYY), Bh.T)
+        #r = np.sqrt(r)
         return r, A, B
 
 

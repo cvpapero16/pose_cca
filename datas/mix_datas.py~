@@ -1,0 +1,96 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+
+import json
+import numpy as np
+
+def json_pose_input(filename):
+
+    f = open(filename, 'r');
+    jD = json.load(f)
+    f.close()
+
+    datas = []
+    ds = len(jD[0]["datas"])
+    dd = len(jD[0]["datas"][0]["jdata"])
+
+    
+    dp = len(jD[0]["datas"][0]["jdata"][0])
+
+    """
+    for user in jD:
+        pobj = []
+        for s in range(ds):
+            pl = []
+            for d in range(dd):
+                for p in range(dp):
+                    pl.append(user["datas"][s]["jdata"][d][p])
+            pobj.append(pl)
+        datas.append(pobj)
+    """
+    users = []
+    for user in jD:
+        datas = []
+        for data in user["datas"]:
+            datas.append(data["jdata"])
+        users.append(datas)
+
+    return users[0], users[1], ds
+
+def cut_datas(d1_u1, d1_u2, d2_u1, d2_u2, ds1, ds2):
+
+    users = [[d1_u1, d1_u2], [d2_u1, d2_u2]]
+    rng = ds1 if ds1<ds2 else ds2
+    
+    datas = []
+    for user in users:
+        dt1, dt2 = [], []
+        for i in range(rng):
+            dt1.append(user[0][i])
+            dt2.append(user[1][i])
+        datas.append(dt1)
+        datas.append(dt2)
+    return datas[0], datas[1], datas[2], datas[3]
+
+
+def output_json(data1, data2):
+
+    dicts = []
+    #print data1[0]
+    users=[data1, data2]
+    for user in users:
+        d_obj = {}
+        dt = [] 
+        for data in user:
+            j_obj = {}
+            j_obj['jdata'] = data
+            dt.append(j_obj)
+        d_obj["datas"] = dt
+        dicts.append(d_obj)
+    #print dicts[0]["datas"][0]["jdata"]
+    f = open("test.json", "w")
+    f.write(json.dumps(dicts))
+
+
+def main():
+    fname1 = "20160211_a2.json" 
+    fname2 = "20160211_a5.json"
+    d1_u1, d1_u2, ds1 = json_pose_input(fname1)
+    d2_u1, d2_u2, ds2 = json_pose_input(fname2)
+
+    d1_u1, d1_u2, d2_u1, d2_u2 = cut_datas(d1_u1, d1_u2, d2_u1, d2_u2, ds1, ds2)
+
+    diff1 = (np.array(d2_u1)-np.array(d1_u1)).sum()
+    diff2 = (np.array(d2_u1)-np.array(d1_u2)).sum()
+    print diff1, diff2
+    if diff1 > diff2: 
+        print diff1
+        output_json(d2_u1,d1_u1)
+    else:
+        print diff2 
+        output_json(d2_u1,d1_u2)
+
+if __name__ =='__main__':
+    main()
+
+
