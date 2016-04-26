@@ -2,6 +2,9 @@
 # -*- coding: utf-8 -*-
 
 """
+2016.4.
+
+
 2016.4.6
 pose_cca2で作ったデータの可視化
 基本的には変わらないが、rowとcolの意味合いが異なる
@@ -30,8 +33,9 @@ from PyQt4.QtGui  import *
 
 from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-import matplotlib.pyplot as pl
+import matplotlib.pyplot as plt
 import matplotlib.cm as cm
+from mpl_toolkits.mplot3d import Axes3D
 
 import rospy
 from visualization_msgs.msg import MarkerArray
@@ -270,6 +274,22 @@ class CCA(QtGui.QWidget):
         boxPub.addWidget(btnPub)
         form.addRow('pub', boxPub)
 
+        # 位相ズレごとの正準ベクトルの可視化        
+        boxPhase = QtGui.QHBoxLayout()
+        self.phase = QtGui.QLineEdit()
+        self.phase.setText('0')
+        self.p_start = QtGui.QLineEdit()
+        self.p_start.setText('0')
+        self.p_end = QtGui.QLineEdit()
+        self.p_end.setText('30')
+        btnPhase = QtGui.QPushButton('plot')
+        btnPhase.clicked.connect(self.seqVecPlot)
+        boxPhase.addWidget(self.phase)
+        boxPhase.addWidget(self.p_start)
+        boxPhase.addWidget(self.p_end)
+        boxPhase.addWidget(btnPhase)
+        form.addRow('phase p,s,e', boxPhase)
+
         #selected pub
         self.radio1 = QtGui.QRadioButton('True')
         form.addRow('match pub time', self.radio1)
@@ -423,6 +443,27 @@ class CCA(QtGui.QWidget):
         pt = Point()            
         pt.x, pt.y, pt.z = pos[0]+addx, pos[1]+addy, pos[2]+addz
         return pt
+
+    def seqVecPlot(self):
+        phase = int(self.phase.text())+int(self.frms)
+
+        
+        fig = plt.figure()
+        print self.wx_m.shape
+        # xv:関節, pv:位相, yv:データ長
+        xv, pv, yv = self.wx_m.shape
+        xs = np.arange(xv)
+
+        ax1 = fig.add_subplot(111, projection='3d')   
+
+        for num in range(30):
+            ys=self.wx_m[:, phase, num]
+            ax1.bar(xs, ys, zs=num, zdir='y', color="r", alpha=0.8)
+        
+        ax1.set_xlim(0,51)
+
+        plt.show()
+
 
     def pubViz(self, r, c, cor, wts, poses, wins, orgs):
         print "r, c", r, c

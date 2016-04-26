@@ -503,9 +503,8 @@ class CCA(QtGui.QWidget):
         SXY = S[:p,p:]
 
         #正則化
-        Rg = np.diag(np.ones(p)*self.reg)
-        SXX = SXX + Rg
-        SYY = SYY + Rg
+        SXX = self.add_reg(SXX, self.reg) 
+        SYY = self.add_reg(SYY, self.reg)
 
         sqx = SLA.sqrtm(SLA.inv(SXX)) # SXX^(-1/2)
         sqy = SLA.sqrtm(SLA.inv(SYY)) # SYY^(-1/2)
@@ -514,6 +513,10 @@ class CCA(QtGui.QWidget):
         B = Bh.T      
         #r = self.reg*r
         return r, A, B
+
+    def add_reg(self, reg_cov, reg):
+        reg_cov += reg * np.average(np.diag(reg_cov)) * np.identity(reg_cov.shape[0])
+        return reg_cov
 
     """
     def gaussian_kernel(x, y, var=1.0):
