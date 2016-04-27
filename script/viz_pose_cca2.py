@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 
 """
-2016.4.
-
+2016.4.27
+正準ベクトルの可視化
 
 2016.4.6
 pose_cca2で作ったデータの可視化
@@ -276,19 +276,19 @@ class CCA(QtGui.QWidget):
 
         # 位相ズレごとの正準ベクトルの可視化        
         boxPhase = QtGui.QHBoxLayout()
-        self.phase = QtGui.QLineEdit()
-        self.phase.setText('0')
-        self.p_start = QtGui.QLineEdit()
-        self.p_start.setText('0')
-        self.p_end = QtGui.QLineEdit()
-        self.p_end.setText('30')
+        self.p_width = QtGui.QLineEdit()
+        self.p_width.setText('30')
+        boxPhase.addWidget(self.p_width)
+
         btnPhase = QtGui.QPushButton('plot')
         btnPhase.clicked.connect(self.seqVecPlot)
-        boxPhase.addWidget(self.phase)
-        boxPhase.addWidget(self.p_start)
-        boxPhase.addWidget(self.p_end)
         boxPhase.addWidget(btnPhase)
-        form.addRow('phase p,s,e', boxPhase)
+
+        btnErr = QtGui.QPushButton('errer')
+        btnErr.clicked.connect(self.errorPlot)
+        boxPhase.addWidget(btnErr)
+
+        form.addRow('vector / error', boxPhase)
 
         #selected pub
         self.radio1 = QtGui.QRadioButton('True')
@@ -342,7 +342,8 @@ class CCA(QtGui.QWidget):
         self.dtmr = self.dts - self.wins + 1
         self.frmr = self.dts - self.frms + 1
         self.dtr = self.frms - self.wins + 1
-
+        print "dtmr:",self.dtmr,", frmr:",self.frmr,", dtr:", self.dtr
+        
         self.updateTable()
         print "end"
 
@@ -445,24 +446,51 @@ class CCA(QtGui.QWidget):
         return pt
 
     def seqVecPlot(self):
-        phase = int(self.phase.text())+int(self.frms)
+        r, c = row, col
+        phase = row
+        start = col
+        end = start + int(self.p_width.text())
 
-        
         fig = plt.figure()
         print self.wx_m.shape
         # xv:関節, pv:位相, yv:データ長
         xv, pv, yv = self.wx_m.shape
         xs = np.arange(xv)
-
         ax1 = fig.add_subplot(111, projection='3d')   
-
-        for num in range(30):
-            ys=self.wx_m[:, phase, num]
+        # 例外処理:endがwx_mの範囲を超えたときの
+        for num in range(start, end):
+            ys=np.sqrt(self.wx_m[:, phase, num]**2)
             ax1.bar(xs, ys, zs=num, zdir='y', color="r", alpha=0.8)
-        
+            if self.dtmr < num:
+                print "data max range:", self.dtmr
+                break
         ax1.set_xlim(0,51)
-
+        ax1.set_ylim(start, end)
         plt.show()
+
+    def errorPlot(self):
+        width = int(self.p_width.text())
+        print "error, width:",width
+        err_size = self.dtmr - width
+        buff = np.zeros((self.frms*2+1, err_size))
+
+        for phase in range(self.frms*2+1):
+            for start in range(err_size):
+                end = start + width
+                buff_tmp = np.zeros(self.dtd)
+                for num in range(start, end):
+                     buff_tmp += np.fabs(self.wx_m[:,phase,num+1] - self.wx_m[:,phase,num])
+                buff[phase, start] = buff_tmp.mean()
+
+        dr, dc = buff.shape
+        Y, X = np.mgrid[slice(0, dr+1, 1),slice(0, dc+1, 1)]
+        plt.pcolor(X, Y, buff, vmin=0.0, vmax=10)
+        plt.xlim(0,dc)
+        plt.ylim(0,dr)
+        plt.colorbar()
+        plt.show()
+        #print buff
+        
 
 
     def pubViz(self, r, c, cor, wts, poses, wins, orgs):
