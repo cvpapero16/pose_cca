@@ -62,9 +62,13 @@ class Plot():
         self.wy_area = self.fig.add_subplot(427)
         self.wy_area.tick_params(labelsize=self.fs)
         self.wy_area.set_title("user2 vec",fontsize=self.fs+1)
-        self.sig_area = self.fig.add_subplot(224)
+        self.sig_area = self.fig.add_subplot(426)
         self.sig_area.tick_params(labelsize=self.fs)
         self.sig_area.set_title("cca:",fontsize=self.fs+1)
+
+        self.fft_area = self.fig.add_subplot(428)
+        self.fft_area.tick_params(labelsize=self.fs)
+        self.fft_area.set_title("fft:",fontsize=self.fs+1)
 
         self.cbar = None
         self.fig.tight_layout()
@@ -100,6 +104,7 @@ class Plot():
 
     def draw_weight(self, row, col):
 
+
         dimen = self.pre_dtd
         xl = np.arange(dimen)
         self.wxlist=[0]*dimen
@@ -111,7 +116,7 @@ class Plot():
         self.wx_area.set_xlim(0, dimen)
         self.wx_area.set_ylim(-1,1)
         #self.wx_area.tick_params(labelsize=self.fs)
-        self.wx_area.set_title("user1 f: "+str(row),fontsize=self.fs+1)
+        self.wx_area.set_title("user1 f: "+str(col),fontsize=self.fs+1)
 
         self.wylist=[0]*dimen
         for i in range(len(self.sidx)):
@@ -122,7 +127,8 @@ class Plot():
         self.wy_area.set_xlim(0, dimen)
         self.wy_area.set_ylim(-1,1)
         #self.wy_area.tick_params(labelsize=self.fs)
-        self.wy_area.set_title("user2 f: "+str(col),fontsize=self.fs+1)
+        width = (self.r_m.shape[0]-1)/2
+        self.wy_area.set_title("user2 f: "+str(width-row),fontsize=self.fs+1)
 
         self.fig.canvas.draw()
 
@@ -168,7 +174,15 @@ class Plot():
         self.sig_area.plot(f, color="r", label="u1", alpha=0.5)
         self.sig_area.plot(g, color="g", label="u2", alpha=0.5)
         self.sig_area.set_title("cca:"+str(self.r_m[row][col]),fontsize=self.fs+1)
+
+        X, Y = np.fft.fft(f), np.fft.fft(g)
+        self.fft_area.cla()
+        self.fft_area.plot(X, color="r", label="u1", alpha=0.5)
+        self.fft_area.plot(Y, color="g", label="u2", alpha=0.5)
+
         self.fig.canvas.draw()
+
+
 
     """
     # user1を横軸に,user2のdelayを縦軸に、長方形のrho図を描く予定
