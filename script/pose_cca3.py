@@ -59,9 +59,12 @@ class Plot():
         self.canvas.setParent(parent)
         self.canvas.mpl_connect('button_press_event', self.on_click)
         self.rho_area = self.fig.add_subplot(211)
+        self.rho_area.set_title("rho", fontsize=11)
         self.tmp_x_area = self.fig.add_subplot(223)
+        self.tmp_x_area.set_title("user 1", fontsize=11)
         self.tmp_y_area = self.fig.add_subplot(224)
-        
+        self.tmp_y_area.set_title("user 2", fontsize=11)
+        self.fig.tight_layout()        
 
     #プロットエリアがクリックされた時
     def on_click(self, event):
@@ -69,19 +72,45 @@ class Plot():
             event.button, event.x, event.y, event.xdata, event.ydata)
         row = int(event.ydata)
         col = int(event.xdata)
+        print "---(",row,", ",col,")---"
         print 'cca r:',self.r_m[row][col]
 
+        """
         #データの可視化
-        print "x:",len(self.tmp_x[row][col]), len(self.tmp_x[row][col][0]), ", y:",len(self.tmp_y[row][col]),len(self.tmp_y[row][col][0])
+        #print "x:",len(self.tmp_x[row][col]), len(self.tmp_x[row][col][0]), ", y:",len(self.tmp_y[row][col]),len(self.tmp_y[row][col][0])
+        print "u1[0]:",self.tmp_x[row][col][0],", u2[0]:",self.tmp_y[row][col][0]
 
+        #data1 = np.fabs(self.tmp_x[row][col]).mean(axis=1)
+        #data2 = np.fabs(self.tmp_y[row][col]).mean(axis=1)
+
+        self.tmp_x_area.cla()
+        self.tmp_x_area.plot(self.tmp_x[row][col])
+        #self.tmp_x_area.plot(data1)
+        self.tmp_x_area.set_title("user 1", fontsize=11)
+        self.tmp_x_area.set_ylim(-0.6, 0.6)
+
+        self.tmp_y_area.cla()
+        self.tmp_y_area.plot(self.tmp_y[row][col])
+        #self.tmp_y_area.plot(data2)
+        self.tmp_y_area.set_title("user 2", fontsize=11)
+        self.tmp_y_area.set_ylim(-0.6, 0.6)
+        self.fig.canvas.draw()
+        self.fig.tight_layout()   
+        """
+
+
+        """
         #多重共線性をチェックするためvifを可視化
         tx = np.array(self.tmp_x[row][col])
         p1 = np.corrcoef(tx.T)
         ty = np.array(self.tmp_y[row][col])
         p2 = np.corrcoef(ty.T)
-
+        
+        print "tx:",tx.shape, ", ty:",ty.shape
+        
+        # ここで, tx, tyのshapeが(1,)とかになってると計算不能?
         print "data1 vif:"
-        for r in range(p1.shape[0] - 1):
+        for r in range(p1.shape[0] - 1): #p1.shape[0]
             for c in range(r, p1.shape[1] -1):
                 p = p1[r][c+1]
                 vif = 1/(1-p**2)
@@ -89,41 +118,30 @@ class Plot():
                     print r, c, vif
 
         print "data2 vif:"
-        for r in range(p2.shape[0] - 1):
+        for r in range(p2.shape[0] - 1): 
             for c in range(r, p2.shape[1] -1):
                 p = p2[r][c+1]
                 vif = 1/(1-p**2)
                 if vif > 10:
                     print r, c, vif
-            
-        #data1 = np.fabs(self.tmp_x[row][col]).mean(axis=1)
-        #data2 = np.fabs(self.tmp_y[row][col]).mean(axis=1)
 
-        self.tmp_x_area.cla()
-        self.tmp_x_area.plot(self.tmp_x[row][col])
-        #self.tmp_x_area.plot(data1)
-        self.tmp_x_area.set_ylim(-0.6, 0.6)
-
-        self.tmp_y_area.cla()
-        self.tmp_y_area.plot(self.tmp_y[row][col])
-        #self.tmp_y_area.plot(data2)
-        self.tmp_y_area.set_ylim(-0.6, 0.6)
-        self.fig.canvas.draw()
+        """
 
     def scale(self, X):
         data = (X - np.mean(X, axis=0))/np.std(X, axis=0)
         return data
 
-    def on_draw(self, r, x, y):
+    def on_draw(self, r):
         self.r_m = r
         self.rho_area = self.fig.add_subplot(211)
 
         #データの可視化
+        """
         self.tmp_x = x
         self.tmp_y = y
         self.tmp_x_area = self.fig.add_subplot(223)
         self.tmp_y_area = self.fig.add_subplot(224)
-
+        """
 
         fs = 10
         dr, dc = self.r_m.shape
@@ -208,6 +226,13 @@ class CCA(QtGui.QWidget):
         self.regBox.setAlignment(QtCore.Qt.AlignRight)
         self.regBox.setFixedWidth(100)
         form.addRow('regulation', self.regBox)
+
+        # threshold
+        self.thBox = QtGui.QLineEdit()
+        self.thBox.setText('0.05')
+        self.thBox.setAlignment(QtCore.Qt.AlignRight)
+        self.thBox.setFixedWidth(100)
+        form.addRow('threshold', self.thBox)
 
         rHLayout = QtGui.QHBoxLayout()
         self.radios = QtGui.QButtonGroup()
@@ -309,8 +334,12 @@ class CCA(QtGui.QWidget):
         #rho_m:rho_matrix[dmr, dmr, datadimen] is corrs
         #wx_m and wy_m is vectors
         self.reg = float(self.regBox.text())
-        #self.r_m, self.wx_m, self.wy_m = self.cca_exec(self.data1, self.data2)
-        self.r_m, self.tmp_x, self.tmp_y = self.cca_exec(self.data1, self.data2)
+        self.th = float(self.thBox.text())
+        self.r_m, self.wx_m, self.wy_m, self.js1, self.js2 = self.cca_exec(self.data1, self.data2)
+
+        #plt.plot(self.data2)
+        #plt.show()
+        #self.r_m, self.tmp_x, self.tmp_y = self.cca_exec(self.data1, self.data2)
 
         #graph
         self.rhoplot()
@@ -319,7 +348,7 @@ class CCA(QtGui.QWidget):
 
     def rhoplot(self):
         #self.plot.on_draw(self.r_m[:,:,0])
-        self.plot.on_draw(self.r_m[:,:], self.tmp_x, self.tmp_y)
+        self.plot.on_draw(self.r_m[:,:])
         
     def json_input(self, filename):
         f = open(filename, 'r')
@@ -367,7 +396,7 @@ class CCA(QtGui.QWidget):
     def save_params(self):
         save_dimen=1 #self.dtd
         savefile = "save_"+ self.fname.lstrip("/home/uema/catkin_ws/src/pose_cca/datas/")
-        savefile = savefile.rstrip(".json")+"_w"+str(self.wins)+"_f"+str(self.frms) +"_d"+str(self.dtd)+"_r"+str(self.reg)+"_s"+str(self.start)+"_e"+str(self.end) 
+        savefile = savefile.rstrip(".json")+"_w"+str(self.wins)+"_f"+str(self.frms) +"_d"+str(self.dtd)+"_r"+str(self.reg)+"_t"+str(self.th)+"_s"+str(self.start)+"_e"+str(self.end) 
         filepath = savefile+".h5"
         print filepath+" is save"
         with h5py.File(filepath, 'w') as f:
@@ -380,6 +409,7 @@ class CCA(QtGui.QWidget):
             p_grp.create_dataset("fname",data=self.fname)
             p_grp.create_dataset("sidx",data=self.sIdx)
             p_grp.create_dataset("reg",data=self.reg)
+            p_grp.create_dataset("th",data=self.th)
             p_grp.create_dataset("org1",data=self.org1)
             p_grp.create_dataset("org2",data=self.org2)
             c_grp=f.create_group("cca")
@@ -391,8 +421,8 @@ class CCA(QtGui.QWidget):
             wx_grp=c_grp.create_group("wx")
             wy_grp=c_grp.create_group("wy")
 
-            print "now save only r_m"
-            r_grp.create_dataset(str(0),data=self.r_m[:,:])
+            #print "now save only r_m"
+            #r_grp.create_dataset(str(0),data=self.r_m[:,:])
             """
             for i in xrange(save_dimen):
                 r_grp.create_dataset(str(i),data=self.r_m[:,:,i])
@@ -402,6 +432,24 @@ class CCA(QtGui.QWidget):
                     wx_v_grp.create_dataset(str(j),data=self.wx_m[:,:,j,i])
                     wy_v_grp.create_dataset(str(j),data=self.wy_m[:,:,j,i])
             """
+            """
+            # jointsの保存,ぶっちゃけいらないかも
+            print self.js1
+            print self.js2
+            js_grp=c_grp.create_group("js")
+            js_grp.create_dataset(str(0), data=self.js1)
+            js_grp.create_dataset(str(1), data=self.js2)
+            """
+            #save_dimen = 1
+            for i in xrange(save_dimen):
+                r_grp.create_dataset(str(i),data=self.r_m[:,:])
+                wx_v_grp = wx_grp.create_group(str(i))
+                wy_v_grp = wy_grp.create_group(str(i))
+                for j in xrange(self.dtd):
+                    #print len(self.wx_m)
+                    #print self.wx_m
+                    wx_v_grp.create_dataset(str(j),data=self.wx_m[:,:,j])
+                    wy_v_grp.create_dataset(str(j),data=self.wy_m[:,:,j])
             f.flush()
         print "save end:",datetime.now().strftime("%Y/%m/%d %H:%M:%S")
 
@@ -421,6 +469,7 @@ class CCA(QtGui.QWidget):
             p_grp.create_dataset("fname",data=self.fname)
             p_grp.create_dataset("sidx",data=self.sIdx)
             p_grp.create_dataset("reg",data=self.reg)
+            p_grp.create_dataset("th",data=self.th)
             p_grp.create_dataset("org1",data=self.org1)
             p_grp.create_dataset("org2",data=self.org2)
 
@@ -526,21 +575,35 @@ class CCA(QtGui.QWidget):
             print "no cut"
             return data1, data2, 0, self.dts
     
-    def low_var_cut(self, X, Y):
-        Xt, Yt = np.array(X).T, np.array(Y).T
-        Xp, Yp = [], []
-        th = 0.001
-        for i, (xdata, ydata) in enumerate(zip(Xt, Yt)):
-            Xvar, Yvar = np.var(np.array(xdata)), np.var(np.array(ydata))
+    def low_var_cut(self, X, th): 
+        Xp = []
+        for i, xdata in enumerate(np.array(X).T):
+            Xvar = np.var(np.array(xdata))
             if Xvar >= th:
                 Xp.append(xdata)
                 #print "x",i, Xvar
-            if Yvar >= th:
-                Yp.append(ydata)
-                #print "y",i, Yvar
-        cutX = np.array(Xp).T
-        cutY = np.array(Yp).T
-        return cutX, cutY
+        Xc = np.array(Xp).T
+        return Xc
+
+    def low_std_cut_joints(self, X, th):
+        exts = []
+        std_tmps = []
+
+        for i, xdata in enumerate(np.array(X).T):
+            Xstd = np.std(np.array(xdata))
+            std_tmps.append(Xstd)
+            if Xstd >= th:
+                exts.append(i)
+                #print i
+                #print xdata 
+                #print Xstd
+        #print "joints len:",len(std_tmps)
+        # もしひとつも閾値thを超えなければ,最大を返す
+        if len(exts) == 0:
+            exts.append(np.array(std_tmps).argmax())
+            
+        return exts
+        
 
     def extract(self, X, th):
         exts = []
@@ -558,6 +621,20 @@ class CCA(QtGui.QWidget):
 
         return np.array(exts).T
 
+    # 使用するjointのインデックスを返す(配列)
+    def ex_joints(self, X, th):
+        exts = []
+        L = X.shape[0]
+        W = X.shape[1] 
+        for d in range(W):
+            sum = 0
+            for n in range(L-1):
+                sum += np.fabs(X[n+1, d] - X[n, d])           
+            if sum > th:
+                exts.append(d)
+        return exts
+
+
     def cca_exec(self, data1, data2):
         #rho_m:rho_matrix[dmr, dmr, datadimen] is corrs
         #wx_m and wy_m is vectors
@@ -566,8 +643,8 @@ class CCA(QtGui.QWidget):
 
         r_m = np.zeros([self.frms*2+1, self.dtmr])
         #r_m = np.zeros([self.frms*2+1, self.dtmr, self.dtd])
-        wx_m = np.zeros([self.frms*2+1, self.dtmr])
-        wy_m = np.zeros([self.frms*2+1, self.dtmr])
+        wx_m = np.zeros([self.frms*2+1, self.dtmr, self.dtd])
+        wy_m = np.zeros([self.frms*2+1, self.dtmr, self.dtd])
 
         # 使われたデータを可視化したいのでそのためのバッファ
         #tmp_x = np.zeros([self.frms*2+1, self.dtmr, self.dtd, self.wins])
@@ -575,61 +652,59 @@ class CCA(QtGui.QWidget):
         tmp_x =[[[[]]]*self.dtmr]*(self.frms*2+1)
         tmp_y =[[[[]]]*self.dtmr]*(self.frms*2+1)
 
-        th = 0.1
+        js1 = [[[]]*self.dtmr]*(self.frms*2+1)
+        js2 = [[[]]*self.dtmr]*(self.frms*2+1)
+
+        #th = 0.3
         #row->colの順番で回したほうが効率いい
+
+        #plt.ion()
         for i in tqdm.tqdm(xrange(self.dtmr)):
             for j in xrange(self.frms*2+1):
                 if self.frms+i-j >= 0 and self.frms+i-j < self.dtmr:
-                    u1 = data1[i:i+self.wins,:]                
-                    u2 = data2[self.frms+i-j:self.frms+i-j+self.wins,:]
-                    #u1, u2 = self.low_var_cut(u1, u2)
-                    u1, u2 = self.extract(u1, th), self.extract(u2, th)
-                    #print u1.shape
-                    #どちらか片方のデータが、一列以下
-                    if len(u1.shape) == 1 or len(u2.shape) == 1: 
+                    #u1 = data1[i:i+self.wins, :]                
+                    #u2 = data2[self.frms+i-j:self.frms+i-j+self.wins,:]
+
+                    j1, j2 = self.low_std_cut_joints(u1, self.th), self.low_std_cut_joints(u2, self.th)
+
+                    #u1, u2 = self.low_var_cut(u1, 0.001), self.low_var_cut(u2, 0.001)
+                    
+                    #print u1[:,j1]
+                    if len(j1) < 1 or len(j2) < 1: 
                         r_m[j][i] = 0
                     else:
-                        #r_m[j][i] = self.corr(u1, u2)
-                        r_m[j][i] = self.cca(u1, u2)
+                        r_m[j][i], wx_m[j][i], wy_m[j][i] = self.cca(u1, u2, j1, j2)
+                        js1[j][i], js2[j][i] = json.dumps(j1), json.dumps(j2)
 
-                        tmps = []
-                        for d in u1:
-                            tmp = []
-                            for v in d:
-                                tmp.append(v)
-                            tmps.append(tmp)
-                        tmp_x[j][i] = tmps
+        return r_m, wx_m, wy_m, js1, js2
 
-                        tmps = []
-                        for d in u2:
-                            tmp = []
-                            for v in d:
-                                tmp.append(v)
-                            tmps.append(tmp)
-                        tmp_y[j][i] = tmps
-
-        return r_m, tmp_x, tmp_y  #wx_m, wy_m
+    def dset(self, X):
+        tmps = []
+        for d in X:
+            tmp = []
+            for v in d:
+                tmp.append(v)
+            tmps.append(tmp)
+        return tmps
 
     def corr(self, X, Y):
         #print X.shape, Y.shape # ex:(34, 5)
         data1 = np.fabs(X).mean(axis=1)
         data2 = np.fabs(Y).mean(axis=1)
-        #plt.plot(data1)
-        #plt.plot(data2)
-        #plt.draw()
-        #print data1
+
         return np.corrcoef(data1.T, data2.T)[0][1]
 
-    def cca(self, X, Y):
+    def cca(self, X, Y, j1, j2):
         '''
         正準相関分析
         http://en.wikipedia.org/wiki/Canonical_correlation
         '''    
-        #X = np.array(X)
-        #Y = np.array(Y)
+        X = X[:, j1]
+        Y = Y[:, j2]
+
         n, p = X.shape
         n, q = Y.shape
-                        
+                  
         # zero mean
         X = X - X.mean(axis=0)
         Y = Y - Y.mean(axis=0)
@@ -652,7 +727,13 @@ class CCA(QtGui.QWidget):
         B = Bh.T      
         #r = self.reg*r
         #print r.shape, A.shape
-        return r[0]#, A[:,0], B[:,0]
+        #Wx = []*self.dtd
+        Wx = np.zeros([self.dtd])
+        Wy = np.zeros([self.dtd])
+        #Wy = []*self.dtd
+        Wx[j1] = A[:,0]
+        Wy[j2] = B[:,0]
+        return r[0], Wx, Wy
 
     def add_reg(self, reg_cov, reg):
         reg_cov += reg * np.average(np.diag(reg_cov)) * np.identity(reg_cov.shape[0])
