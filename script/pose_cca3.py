@@ -229,7 +229,7 @@ class CCA(QtGui.QWidget):
 
         # threshold
         self.thBox = QtGui.QLineEdit()
-        self.thBox.setText('0.05')
+        self.thBox.setText('0.2')
         self.thBox.setAlignment(QtCore.Qt.AlignRight)
         self.thBox.setFixedWidth(100)
         form.addRow('threshold', self.thBox)
@@ -597,11 +597,13 @@ class CCA(QtGui.QWidget):
                 #print i
                 #print xdata 
                 #print Xstd
+
         #print "joints len:",len(std_tmps)
         # もしひとつも閾値thを超えなければ,最大を返す
+        """
         if len(exts) == 0:
             exts.append(np.array(std_tmps).argmax())
-            
+        """
         return exts
         
 
@@ -662,11 +664,11 @@ class CCA(QtGui.QWidget):
         for i in tqdm.tqdm(xrange(self.dtmr)):
             for j in xrange(self.frms*2+1):
                 if self.frms+i-j >= 0 and self.frms+i-j < self.dtmr:
-                    #u1 = data1[i:i+self.wins, :]                
-                    #u2 = data2[self.frms+i-j:self.frms+i-j+self.wins,:]
+                    u1 = data1[i:i+self.wins, :]                
+                    u2 = data2[self.frms+i-j:self.frms+i-j+self.wins,:]
 
                     j1, j2 = self.low_std_cut_joints(u1, self.th), self.low_std_cut_joints(u2, self.th)
-
+                    # j1, j2 = self.ex_joints(u1, self.th), self.ex_joints(u2, self.th)
                     #u1, u2 = self.low_var_cut(u1, 0.001), self.low_var_cut(u2, 0.001)
                     
                     #print u1[:,j1]

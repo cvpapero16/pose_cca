@@ -66,7 +66,7 @@ class JointsStd():
             b += (s_r[i]-s_l[i])**2
         k = a/b
         org = np.array([k*s_r[i]+(1-k)*s_l[i] for i in range(offset)])
-
+        print "org1",org
         """
         # 法線を求める
         l_s = np.array(data[s_l_id]) - np.array(data[spn_id])
@@ -76,6 +76,7 @@ class JointsStd():
         normal = normal+org
         """
 
+        #orgをx軸上に変換する
         th_z = np.arctan2(org[1], org[0])
         th_y = np.arctan2(org[2], org[0])
         cos_th_z = np.cos(-th_z)
@@ -140,6 +141,7 @@ class JointsStd():
     
 
         for dt in offset_data:
+
             dt = np.array(dt)
             #rot_pose
 

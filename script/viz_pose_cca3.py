@@ -101,9 +101,9 @@ class Plot():
         self.draw_weight(row, col)
         #self.draw_static_coef(row, col)
 
-        #データの場合はズレを考慮に入れる
+        #dataの場合はズレを考慮に入れる
         width = (self.r_m.shape[0]-1)/2
-        self.draw_sig(width-row, col)
+        self.draw_sig(row, col, width)
         
         CCA().set_row_col(row, col)
 
@@ -112,10 +112,11 @@ class Plot():
 
         dimen = self.pre_dtd
         xl = np.arange(dimen)
+
         self.wxlist=[0]*dimen
         for i in range(len(self.sidx)):
-            #self.wxlist[self.sidx[i]] = self.wx_m[:,row,col][i]
             self.wxlist[self.sidx[i]] = self.wx_m[i, row, col]
+        
         self.wx_area.cla()
         self.wx_area.bar(xl, self.wxlist)
         self.wx_area.set_xlim(0, dimen)
@@ -177,7 +178,7 @@ class Plot():
         return js
         
 
-    def draw_sig(self, row, col):
+    def draw_sig(self, row, col, width):
         print "draw_sig:",row,col
         d1 = np.array(self.data1)
         d2 = np.array(self.data2)
@@ -185,10 +186,11 @@ class Plot():
         # 可視化されない。なぜ? shapeが(0, 51)になってる??←再現できない...解決されてる??
         # 重みの入ってるjointのインデックス
         j1, j2 = self.get_index(self.wx_m[:,row,col]), self.get_index(self.wy_m[:,row,col])
-        print "j1",len(j1),j1
-        print "j2",len(j2),j2
+        #j1, j2は,手先などのデータをカットした後のインデックス(全51次元)だから、75次元のデータとマッチングしない
+        #print "j1",len(j1),j1
+        #print "j2",len(j2),j2
         ds1 = d1[col:col+self.wins,j1]
-        ds2 = d2[col+row:col+row+self.wins,j2] #rowとcolを使ってデータのオフセットを表現
+        ds2 = d2[col+(width-row):col+(width-row)+self.wins,j2] #rowとcolを使ってデータのオフセットを表現
         #f = np.dot(d1[row:row+self.wins,:], np.array(self.wx_m[:,row,col]))
         #g = np.dot(d2[row:row+self.wins,:], np.array(self.wy_m[:,row,col]))
         
@@ -345,13 +347,21 @@ class CCA(QtGui.QWidget):
 
         #pub        
         boxPub = QtGui.QHBoxLayout()
-        self.line_row = QtGui.QLineEdit()
-        self.line_col = QtGui.QLineEdit()
+        self.start_line = QtGui.QLineEdit()
+        self.start_line.setText('0')
+        self.end_line = QtGui.QLineEdit()
+        self.end_line.setText('100')
         btnPub = QtGui.QPushButton('publish')
         btnPub.clicked.connect(self.doPub)
-        boxPub.addWidget(self.line_row)
-        boxPub.addWidget(self.line_col)
+        btnAllPub = QtGui.QPushButton('all pub')
+        btnAllPub.clicked.connect(self.doAllPub)
+
         boxPub.addWidget(btnPub)
+
+        boxPub.addWidget(self.start_line)
+        boxPub.addWidget(self.end_line)
+
+        boxPub.addWidget(btnAllPub)
         form.addRow('pub', boxPub)
 
         # 位相ズレごとの正準ベクトルの可視化        
@@ -510,6 +520,20 @@ class CCA(QtGui.QWidget):
                 self.pubViz(c, c+offset, cor, weights, poses, self.wins, orgs)
         print "---play back end---"
  
+    def doAllPub(self):
+        start = int(self.start_line.text()) if int(self.start_line.text()) >= 0 else 0
+        end = int(self.end_line.text()) if int(self.end_line.text()) <= self.dts else self.dts
+
+        print "pub area",start,"-",end
+        poses, weights, orgs = [], [], []
+        
+        orgs.append(self.org1)
+        orgs.append(self.org2)
+        poses.append(self.pos1[start:end])
+        poses.append(self.pos2[start:end])
+        self.pubViz(0, 0, 0, weights, poses, self.wins, orgs)
+
+
     def rviz_obj(self, obj_id, obj_ns, obj_type, obj_size, obj_color=0, obj_life=0):
         obj = Marker()
         obj.header.frame_id, obj.header.stamp = "camera_link", rospy.Time.now()
@@ -575,7 +599,7 @@ class CCA(QtGui.QWidget):
 
     def pubViz(self, r, c, cor, wts, poses, wins, orgs):
         print "r, c", r, c
-        rate = rospy.Rate(10)
+        rate = rospy.Rate(17)
         offset = c if (r>c) else r
 
         for i in range(len(poses[0])):
@@ -614,16 +638,17 @@ class CCA(QtGui.QWidget):
                 msgs.markers.append(tmsg) 
                 
                 # arrow
-                amsg = self.rviz_obj(u, 'a'+str(u), 5,  [0.005, 0.005, 0.005], 1) 
-                df = 0.3
-                for (ni, nid) in enumerate(self.nidx):
-                    amsg.points.append(self.set_point(pos[i][nid]))
-                    amsg.points.append(self.set_point(pos[i][nid], addx=wts[u][ni*3]*df))
-                    amsg.points.append(self.set_point(pos[i][nid]))
-                    amsg.points.append(self.set_point(pos[i][nid], addy=wts[u][ni*3+1]*df))
-                    amsg.points.append(self.set_point(pos[i][nid]))
-                    amsg.points.append(self.set_point(pos[i][nid], addz=wts[u][ni*3+2]*df))
-                msgs.markers.append(amsg) 
+                if len(wts) != 0:
+                    amsg = self.rviz_obj(u, 'a'+str(u), 5,  [0.005, 0.005, 0.005], 1) 
+                    df = 0.3
+                    for (ni, nid) in enumerate(self.nidx):
+                        amsg.points.append(self.set_point(pos[i][nid]))
+                        amsg.points.append(self.set_point(pos[i][nid], addx=wts[u][ni*3]*df))
+                        amsg.points.append(self.set_point(pos[i][nid]))
+                        amsg.points.append(self.set_point(pos[i][nid], addy=wts[u][ni*3+1]*df))
+                        amsg.points.append(self.set_point(pos[i][nid]))
+                        amsg.points.append(self.set_point(pos[i][nid], addz=wts[u][ni*3+2]*df))
+                    msgs.markers.append(amsg) 
               
                 if u == 0 and sq > r and sq < r+wins:    
                     #print "now interaction", u
