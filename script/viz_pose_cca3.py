@@ -65,13 +65,13 @@ class Plot():
         self.wy_area = self.fig.add_subplot(427)
         self.wy_area.tick_params(labelsize=self.fs)
         self.wy_area.set_title("user2 vec",fontsize=self.fs+1)
-        self.sig_area = self.fig.add_subplot(426)
-        self.sig_area.tick_params(labelsize=self.fs)
-        self.sig_area.set_title("cca:",fontsize=self.fs+1)
+        self.sig1_area = self.fig.add_subplot(426)
+        self.sig1_area.tick_params(labelsize=self.fs)
+        self.sig1_area.set_title("sig1:",fontsize=self.fs+1)
 
-        self.fft_area = self.fig.add_subplot(428)
-        self.fft_area.tick_params(labelsize=self.fs)
-        self.fft_area.set_title("fft:",fontsize=self.fs+1)
+        self.sig2_area = self.fig.add_subplot(428)
+        self.sig2_area.tick_params(labelsize=self.fs)
+        self.sig2_area.set_title("sig2:",fontsize=self.fs+1)
 
         self.cbar = None
         self.fig.tight_layout()
@@ -90,7 +90,20 @@ class Plot():
 
     def staticCoef(self, d, v):        
         f = np.dot(d, v)
-        fu = np.corrcoef(np.c_[f,d].T)[0,1:]
+
+        #dの"重み"がない次元データは0にする
+        js = self.get_index(v)#重みの入ってるインデックスのリスト
+        
+        #データが入ってるとこだけ計算する
+        fu = np.corrcoef(np.c_[f,d[:,js]].T)[0,1:]
+        #return f, fu
+        #データを指定したindexにだけ入れなおす
+        # よく考えたらそれって簡単にできないんじゃね?
+        """
+        wcf=[0]*51
+        for i in range(len(self.sidx)):
+            wcf[self.sidx[i]] = fu[i]
+        """
         return fu, np.mean(fu**2)
 
     #プロットエリアがクリックされた時
@@ -99,11 +112,14 @@ class Plot():
         row = int(event.ydata)
         print 'cca(%d, %d) r:%f'%(row, col, self.r_m[row][col])
         self.draw_weight(row, col)
-        #self.draw_static_coef(row, col)
 
         #dataの場合はズレを考慮に入れる
         width = (self.r_m.shape[0]-1)/2
         self.draw_sig(row, col, width)
+
+        #構造係数
+        #self.draw_static_coef(row, col, width)
+
         
         CCA().set_row_col(row, col)
 
@@ -120,7 +136,7 @@ class Plot():
         self.wx_area.cla()
         self.wx_area.bar(xl, self.wxlist)
         self.wx_area.set_xlim(0, dimen)
-        self.wx_area.set_ylim(-1,1)
+        #self.wx_area.set_ylim(-1,1)
         #self.wx_area.tick_params(labelsize=self.fs)
         self.wx_area.set_title("user1 f: "+str(col),fontsize=self.fs+1)
 
@@ -131,7 +147,7 @@ class Plot():
         self.wy_area.cla()
         self.wy_area.bar(xl, self.wylist)
         self.wy_area.set_xlim(0, dimen)
-        self.wy_area.set_ylim(-1,1)
+        #self.wy_area.set_ylim(-1,1)
         #self.wy_area.tick_params(labelsize=self.fs)
         width = (self.r_m.shape[0]-1)/2
         self.wy_area.set_title("user2 f: "+str(width-row),fontsize=self.fs+1)
@@ -139,7 +155,7 @@ class Plot():
         self.fig.canvas.draw()
 
 
-    def draw_static_coef(self, row, col):
+    def draw_static_coef(self, row, col, width):
 
         d1 = np.array(self.data1)
         d2 = np.array(self.data2)
@@ -149,9 +165,12 @@ class Plot():
         #gu2, con2= self.staticCoef(d2[col:col+self.wins,:], self.wy_m[:,row,col])
 
         # row colの解釈が異なるため、変更する必要がある, d1, d2の
-        fu1, con1= self.staticCoef(d1[row:row+self.wins,:], np.array(self.wxlist))
-        gu2, con2= self.staticCoef(d2[col:col+self.wins,:], np.array(self.wylist))
+        fu1, con1= self.staticCoef(d1[col:col+self.wins,:], self.wx_m[:, row, col])
+        gu2, con2= self.staticCoef(d2[col+(width-row):col+(width-row)+self.wins,:], self.wy_m[:, row, col])
 
+        print "fu", fu1
+        print "gu", gu2
+        """
         ds1, ds2, ds3 = self.wx_m.shape
         xl = np.arange(ds1)
         
@@ -168,7 +187,7 @@ class Plot():
         self.wy_area.set_title("user2 vec",fontsize=self.fs+1)
 
         self.fig.canvas.draw()
-
+        """
 
     def get_index(self, w):
         js = []
@@ -177,6 +196,12 @@ class Plot():
                 js.append(i)
         return js
         
+    def calc_sq(self, X):        
+        X = X - X.mean(axis=0)
+        S = np.cov(X.T, bias=1)
+        sq = SLA.sqrtm(SLA.inv(S))
+        return sq
+
 
     def draw_sig(self, row, col, width):
         print "draw_sig:",row,col
@@ -189,34 +214,70 @@ class Plot():
         #j1, j2は,手先などのデータをカットした後のインデックス(全51次元)だから、75次元のデータとマッチングしない
         #print "j1",len(j1),j1
         #print "j2",len(j2),j2
-        ds1 = d1[col:col+self.wins,j1]
-        ds2 = d2[col+(width-row):col+(width-row)+self.wins,j2] #rowとcolを使ってデータのオフセットを表現
-        #f = np.dot(d1[row:row+self.wins,:], np.array(self.wx_m[:,row,col]))
-        #g = np.dot(d2[row:row+self.wins,:], np.array(self.wy_m[:,row,col]))
         
+        dr1 = d1[col:col+self.wins,:]
+        dr2 = d2[col+(width-row):col+(width-row)+self.wins,:]
+        ds1 = dr1[:,j1]
+        ds2 = dr2[:,j2]
+        #ds1 = d1[col:col+self.wins,j1]
+        #ds2 = d2[col+(width-row):col+(width-row)+self.wins,j2] #rowとcolを使ってデータのオフセットを表現
+
+        """
+        wxlist=[0]*len(self.sidx)
+        for (i, d) in enumerate(self.sidx):
+            self.wxlist[i] = self.wx_m[d, row, col]
+        """
+        # 基底変換する
+        #wx = np.dot(self.calc_sq(ds1), self.wx_m[j1, row, col])
+        #wy = np.dot(self.calc_sq(ds2), self.wy_m[j2, row, col])
+
+        # 正準値を可視化してみる
+        wx, wy = self.wx_m[j1, row, col], self.wy_m[j2, row, col]
+        #f, g = np.dot(ds1, wx), np.dot(ds2, wy)
+        f, g = ds1, ds2
+        # f, gはn行1列だから以下が成立
+        maxf, maxg = f.max(), g.max()
+        rng_max = maxf+1 if maxf > maxg else maxg+1
+        minf, ming = f.min(), g.min()
+        rng_min = minf-1 if minf < ming else ming-1
+
+        #print "f",f.shape
+
+        # 正準相関の値
+        #corr = np.corrcoef(f, g)[0,1]
+
         print "ds1 std:",np.std(ds1, axis=0)
         print "ds2 std:",np.std(ds2, axis=0)
+
+        #これは間違い。差分の絶対値の合計を取るべき
+        #print "ds1", ds1.shape, " sum:",np.sum(np.fabs(ds1), axis=0)
+        #print "ds2", ds2.shape, " sum:",np.sum(np.fabs(ds2), axis=0)
+        #print "corr(ds1, ds2)", corr
         #print ds2.shape
         
-        ds1_m = np.std(ds1, axis=0).mean()
-        ds2_m = np.std(ds2, axis=0).mean()
+        #ds1_m = np.std(ds1, axis=0).mean()
+        #ds2_m = np.std(ds2, axis=0).mean()
+        #ds1_m = np.sum(np.fabs(ds1), axis=0)
+        #ds2_m = np.sum(np.fabs(ds2), axis=0)
 
-        self.sig_area.cla()
-        self.sig_area.plot(ds1, label="u1", alpha=0.5)
-        #self.sig_area.plot(ds2, color="g", label="u2", alpha=0.5)
-        self.sig_area.set_title("user1 cca:"+str(self.r_m[row][col])+", std_mean:"+str(ds1_m),fontsize=self.fs+1)
-        self.sig_area.set_ylim(-0.6, 0.6)
+        #rng = 1
+        self.sig1_area.cla()
+        #self.sig1_area.plot(ds1, label="u1", alpha=0.5)
+        self.sig1_area.plot(f, label="u1", alpha=0.5)
+        self.sig1_area.set_title("user1 cca:"+str(self.r_m[row][col]), fontsize=self.fs+1)
+        self.sig1_area.set_ylim(rng_min, rng_max)
 
-        self.fft_area.cla()
-        self.fft_area.plot(ds2, label="u2", alpha=0.5)
-        self.fft_area.set_title("user2 cca:"+str(self.r_m[row][col])+", std_mean:"+str(ds2_m),fontsize=self.fs+1)
-        self.fft_area.set_ylim(-0.6, 0.6)
+        self.sig2_area.cla()
+        #self.sig2_area.plot(ds2, label="u2", alpha=0.5)
+        self.sig2_area.plot(g, label="u2", alpha=0.5)
+        self.sig2_area.set_title("user2 cca:"+str(self.r_m[row][col]), fontsize=self.fs+1)
+        self.sig2_area.set_ylim(rng_min, rng_max)
 
         """
         X, Y = np.fft.fft(f), np.fft.fft(g)
-        self.fft_area.cla()
-        self.fft_area.plot(X, color="r", label="u1", alpha=0.5)
-        self.fft_area.plot(Y, color="g", label="u2", alpha=0.5)
+        self.sig2_area.cla()
+        self.sig2_area.plot(X, color="r", label="u1", alpha=0.5)
+        self.sig2_area.plot(Y, color="g", label="u2", alpha=0.5)
         """
 
         self.fig.canvas.draw()
@@ -495,8 +556,11 @@ class CCA(QtGui.QWidget):
 
         print "---play back start---"
         poses, weights, orgs = [], [], []
+
+        #ここでweightを構造係数に変換するか?
         weights.append(self.wx_m[:,r,c])
         weights.append(self.wy_m[:,r,c])
+
         orgs.append(self.org1)
         orgs.append(self.org2)
 
@@ -617,11 +681,13 @@ class CCA(QtGui.QWidget):
                 pmsg.points = [self.set_point(p) for p in np.array(pos[i])[self.nidx]]
                 msgs.markers.append(pmsg)
                 
+                """
                 # origin points
                 omsg = self.rviz_obj(u, 'o'+str(u), 7, [0.03, 0.03, 0.03], 1)
                 omsg.points = [self.set_point(orgs[u])]
                 msgs.markers.append(omsg)
-                
+                """
+
                 # lines
                 lmsg = self.rviz_obj(u, 'l'+str(u), 5, [0.005, 0.005, 0.005], 2)
                 for jid in self.jidx:
@@ -640,7 +706,8 @@ class CCA(QtGui.QWidget):
                 # arrow
                 if len(wts) != 0:
                     amsg = self.rviz_obj(u, 'a'+str(u), 5,  [0.005, 0.005, 0.005], 1) 
-                    df = 0.3
+                    num = 0.3
+                    df = num/max(np.fabs(wts[u]))
                     for (ni, nid) in enumerate(self.nidx):
                         amsg.points.append(self.set_point(pos[i][nid]))
                         amsg.points.append(self.set_point(pos[i][nid], addx=wts[u][ni*3]*df))

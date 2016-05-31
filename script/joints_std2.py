@@ -11,6 +11,7 @@
 """
 
 import numpy as np
+import json
 
 import rospy
 from visualization_msgs.msg import MarkerArray
@@ -25,6 +26,12 @@ class JointsStd():
     def __init__(self):
         #ROSのパブリッシャなどの初期化
         #rospy.init_node('ccaviz', anonymous=True)
+
+        fname = "/home/uema/catkin_ws/src/pose_cca/datas/20160520_a2.json"
+        poses1, poses2, dts, dtd = self.json_pose_input(fname)
+        self.poses1, self.poses2 = self.select_datas(poses1, poses2)
+        #print poses1.shape
+
         self.mpub = rospy.Publisher('visualization_marker_array', MarkerArray, queue_size=10)
         self.carray = []
         clist = [[1, 0, 0, 1], [0, 1, 0, 1], [1, 1, 0, 1], [1, 0.5, 0, 1]]
@@ -52,29 +59,19 @@ class JointsStd():
         return jidx, nidx
 
 
-
-
-
-
-
-
-
-
-
-    def normalize_data(self, data):
+    def normalize_data(self, data, os):
 
         # 原点の計算
-        def calc_org(data, s_l_id, s_r_id, spn_id):
+        def calc_org(data, s_l_id, s_r_id, spn_id, os):
             #print data
-            offset = 3 #x, y, zのため
             s_l, s_r, spn = data[s_l_id], data[s_r_id], data[spn_id] 
             a, b = 0, 0
             # 原点 = 右肩から左肩にかけた辺と胸からの垂線の交点
-            for i in range(offset):
+            for i in range(os):
                 a += (spn[i]-s_l[i])*(s_r[i]-s_l[i])
                 b += (s_r[i]-s_l[i])**2
             k = a/b
-            return np.array([k*s_r[i]+(1-k)*s_l[i] for i in range(offset)])
+            return np.array([k*s_r[i]+(1-k)*s_l[i] for i in range(os)])
 
         # 法線の計算
         def calc_normal(d_sl, d_sp, d_sr):
@@ -102,6 +99,7 @@ class JointsStd():
 
         # 平行移動
         def calc_shift_pose(data, org, s):
+            print org.shape
             shift = s - org
             shift_pose = []
             for dt in data:
@@ -109,11 +107,30 @@ class JointsStd():
                 shift_pose.append(dt)
             return shift_pose
 
-        #data = np.array(data)
+        def data_set(data, os):
+
+            """
+            ds = []
+            for d in range(len(data)/os):
+                ds.append([data[d*os], data[d*os+1], data[d*os+2]])
+            """
+            ds = np.reshape(data, (len(data)/os, os))
+            return ds
+
+        def data_reset(data):
+            data = np.array(data)
+            ds = np.reshape(data, (data.shape[0]*data.shape[1], ))
+            return ds
+    
+
+        #データを一旦xyzを配列のパックに戻す
+        data = data_set(data, os)
+
         # 左肩 4, 右肩 8(カットせずに数えた場合のjoint index), 胸 1 
-        s_l_id, s_r_id, spn_id = 4, 8, 1
+        s_l_id, s_r_id, spn_id = 4, 7, 1
+
         # 原点の計算
-        org = calc_org(data, s_l_id, s_r_id, spn_id)
+        org = calc_org(data, s_l_id, s_r_id, spn_id, os)
         # 法線を求める
         normal = calc_normal(data[s_l_id], data[spn_id], data[s_r_id])
         # 法線の角度方向にposeを回転
@@ -125,11 +142,13 @@ class JointsStd():
         th_y = np.arctan2(org[2], org[0])
         rot_pose_norm = calc_rot_pose(rot_pose, th_z, th_y, np.array([0,0,0]))
         # 変換後のorg
-        rot_org = calc_org(rot_pose_norm, s_l_id, s_r_id, spn_id)
+        rot_org = calc_org(rot_pose_norm, s_l_id, s_r_id, spn_id, os)
         # orgのxを特定の値に移動する
-        s = [1,0,0]
+        s = [0,0,0]
         shift_pose = calc_shift_pose(rot_pose_norm, rot_org, s)
-        shift_org = calc_org(shift_pose, s_l_id, s_r_id, spn_id)
+        shift_org = calc_org(shift_pose, s_l_id, s_r_id, spn_id, os)
+
+        print data_reset(shift_pose).shape
         return shift_pose, shift_org 
 
 
@@ -148,12 +167,41 @@ class JointsStd():
         pt.x, pt.y, pt.z = pos[0]+addx, pos[1]+addy, pos[2]+addz
         return pt
 
+
+    def json_pose_input(self, filename):
+        f = open(filename, 'r');
+        jD = json.load(f)
+        f.close()
+        datas = []
+        ds = len(jD[0]["datas"])
+        dd = len(jD[0]["datas"][0]["jdata"]) 
+        dp = len(jD[0]["datas"][0]["jdata"][0])
+
+        for user in jD:
+            pobj = []
+            for s in range(ds):
+                pl = []
+                for d in range(dd):
+                    for p in range(dp):
+                        pl.append(user["datas"][s]["jdata"][d][p])
+                pobj.append(pl)
+            datas.append(pobj)
+        return np.array(datas[0]), np.array(datas[1]), ds, dd*dp
+
+    def select_datas(self, data1, data2):
+        self.sIdx = [0,1,2,3,4,5,6,8,9,10,12,13,14,16,17,18,20]
+        new_sid = [sid*3+i  for sid in self.sIdx for i in xrange(3)]
+        self.sIdx = new_sid
+        #print self.sIdx
+        return data1[:,self.sIdx],  data2[:,self.sIdx]
+
     def pubViz(self):
 
         rate = rospy.Rate(10)
 
         msgs = MarkerArray()
 
+        # x, y, zの軸を描画
         lmsg = self.rviz_obj(0, 'l'+str(0), 5, [0.005, 0.005, 0.005], 2)       
         lmsg.points.append(self.set_point([0,0,0])) 
         lmsg.points.append(self.set_point([0,0,0], addx=1))
@@ -163,37 +211,47 @@ class JointsStd():
         lmsg.points.append(self.set_point([0,0,0], addz=1))
         msgs.markers.append(lmsg)
 
-        for u, pos in enumerate(poses):
-            
-            # points
-            pmsg = self.rviz_obj(u, 'p'+str(u), 7, [0.03, 0.03, 0.03], 0)
-            #pmsg.points = [self.set_point(p) for p in np.array(pos[0])[self.nidx]]
-            pmsg.points = [self.set_point(p) for p in np.array(pos)]
-            msgs.markers.append(pmsg)
-              
-            #org, normal, rot_pose = self.normalize_datas(pos)
-            rot_pose, org  = self.normalize_data(pos)
-            # origin points
-            omsg = self.rviz_obj(u, 'o'+str(u), 7, [0.03, 0.03, 0.03], 1)
-            omsg.points = [self.set_point(org)]
-            msgs.markers.append(omsg)
-            
-            """
-            # normal line
-            nlmsg = self.rviz_obj(u, 'nl'+str(u), 5, [0.005, 0.005, 0.005], 2)       
-            # nlmsg.points.append(self.set_point(org)) 
-            nlmsg.points.append(self.set_point([0,0,0])) 
-            nlmsg.points.append(self.set_point(normal))
-            msgs.markers.append(nlmsg)
-            """
-            
-            # rot_pose
-            rpmsg = self.rviz_obj(u, 'rp'+str(u), 7, [0.03, 0.03, 0.03], 3)
-            #pmsg.points = [self.set_point(p) for p in np.array(pos[0])[self.nidx]]
-            rpmsg.points = [self.set_point(p) for p in np.array(rot_pose)]
-            msgs.markers.append(rpmsg)
-            
 
+        # この時点でposes1, poses2は(4720, 51)の行列になっている
+
+        os = 3
+        #for u, pos in enumerate(poses1):
+        
+        #print pos.shape
+        u = 0
+        points = []
+        pos = self.poses2[0]
+        for p in range(len(pos)/os):
+            pmsg = self.rviz_obj(u, 'p'+str(u), 7, [0.03, 0.03, 0.03], 0)
+            points.append(self.set_point([pos[p*os], pos[p*os+1], pos[p*os+2]]))
+            pmsg.points = points
+        msgs.markers.append(pmsg)
+        #print pmsg.points
+        
+        #org, normal, rot_pose = self.normalize_datas(pos)
+        rot_pose, org  = self.normalize_data(pos, 3)
+        
+        # origin points
+        omsg = self.rviz_obj(u, 'o'+str(u), 7, [0.03, 0.03, 0.03], 1)
+        omsg.points = [self.set_point(org)]
+        msgs.markers.append(omsg)
+        
+        
+        # normal line
+        #nlmsg = self.rviz_obj(u, 'nl'+str(u), 5, [0.005, 0.005, 0.005], 2)       
+        # nlmsg.points.append(self.set_point(org)) 
+        #nlmsg.points.append(self.set_point([0,0,0])) 
+        #nlmsg.points.append(self.set_point(normal))
+        #msgs.markers.append(nlmsg)
+        
+        
+        # rot_pose
+        rpmsg = self.rviz_obj(u, 'rp'+str(u), 7, [0.03, 0.03, 0.03], 3)
+        #pmsg.points = [self.set_point(p) for p in np.array(pos[0])[self.nidx]]
+        rpmsg.points = [self.set_point(p) for p in np.array(rot_pose)]
+        msgs.markers.append(rpmsg)
+        
+        
         self.mpub.publish(msgs)
         rate.sleep()
 

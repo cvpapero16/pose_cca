@@ -197,6 +197,7 @@ class JointsStd():
             pmsg = self.rviz_obj(u, 'p'+str(u), 7, [0.03, 0.03, 0.03], 0)
             #pmsg.points = [self.set_point(p) for p in np.array(pos[0])[self.nidx]]
             pmsg.points = [self.set_point(p) for p in np.array(pos)]
+            print pmsg.points
             msgs.markers.append(pmsg)
               
             org, normal, rot_pose = self.normalize_datas(pos)

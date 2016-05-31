@@ -73,8 +73,8 @@ def output_json(data1, data2):
 
 
 def main():
-    fname1 = "20160211_a3.json" 
-    fname2 = "20160211_a5.json"
+    fname1 = "20160520_a2.json" 
+    fname2 = "20160525_a7.json"
     d1_u1, d1_u2, ds1 = json_pose_input(fname1)
     d2_u1, d2_u2, ds2 = json_pose_input(fname2)
 

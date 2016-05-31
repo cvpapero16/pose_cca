@@ -2,6 +2,9 @@
 # -*- coding: utf-8 -*-
 
 """
+2016.5.26
+座標変換した
+
 2016.4.29
 低周波のデータをカットする
 各データの時系列変化の積算をとり、任意の閾値でカット
@@ -25,6 +28,8 @@ import math
 import json
 import time
 from datetime import datetime
+from operator import itemgetter
+
 import h5py
 import tqdm
 
@@ -229,7 +234,7 @@ class CCA(QtGui.QWidget):
 
         # threshold
         self.thBox = QtGui.QLineEdit()
-        self.thBox.setText('0.2')
+        self.thBox.setText('0.05')
         self.thBox.setAlignment(QtCore.Qt.AlignRight)
         self.thBox.setFixedWidth(100)
         form.addRow('threshold', self.thBox)
@@ -306,9 +311,6 @@ class CCA(QtGui.QWidget):
         self.fname = str(self.txtSepFile.text())
         self.data1, self.data2, self.dts, self.dtd = self.json_pose_input(self.fname)
         self.times = self.json_time_input(self.fname)
-
-
-
         # select joints
         self.data1, self.data2 = self.select_datas(self.data1, self.data2)
         # if data is big then...
@@ -319,8 +321,11 @@ class CCA(QtGui.QWidget):
         self.dts, self.dtd = self.data1.shape
         # data normalization
         #self.data1, self.data2, self.org1, self.org2 = self.normalize_datas(self.data1, self.data2)
+
+        #一旦消してた
         self.data1, self.org1 = self.normalize_data(self.data1)
         self.data2, self.org2 = self.normalize_data(self.data2)
+        #self.org1, self.org2 = 0, 0
 
         #ws:window_size, fs:frame_size 
         self.wins = int(self.winSizeBox.text())
@@ -531,57 +536,20 @@ class CCA(QtGui.QWidget):
     def id_conv(self, idx):
         return [idx*3+i for i in range(3)]
 
-
-    def normalize_datas(self, data1, data2):
-       
-        s_l_id, s_r_id, spn_id = 4, 7, 1
-        offset = 3
-        datas, orgs = [], []
-        for dt in [data1, data2]:
-            s_l = dt[0][s_l_id*offset:s_l_id*offset+offset] # 左肩 4
-            s_r = dt[0][s_r_id*offset:s_r_id*offset+offset] # 右肩 7 
-            spn = dt[0][spn_id*offset:spn_id*offset+offset] # 胸 1
-            a, b = 0, 0
-            for i in range(offset):
-                a += (spn[i]-s_l[i])*(s_r[i]-s_l[i])
-                b += (s_r[i]-s_l[i])**2
-            k = a/b
-            
-            # 原点
-            org = [k*s_r[i]+(1-k)*s_l[i] for i in range(offset)]
-            orgs.append(org)
-            print "org",org
-
-            #x, y, zの塊ずつ見ていく
-            data = []
-            for d in dt:
-                dtset = []
-                for u in range(len(d)/3):
-                    dtset.extend(d[u*3:u*3+3] - org)
-                data.append(dtset)
-
-            datas.append(data)
-
-        print np.array(datas[0]).shape
-
-        return datas[0], datas[1], orgs[0], orgs[1]
-
-
-
     def normalize_data(self, data):
         datas = []
-        org = self.std_data(data[0])[1]
+        os = 3
+        org = self.std_data(data[0], os)[1]
         for dt in data:
-            datas.append(self.std_data(dt)[0])
+            datas.append(self.std_data(dt, os)[0])
         return np.array(datas), org
 
 
-    def std_data(self, data):
+    def std_data(self, data, os):
         # 原点の計算
         def calc_org(data, s_l_id, s_r_id, spn_id, os):
             #print data
-            #os = 3 #x, y, zのため
-            s_l, s_r, spn = data[s_l_id:s_l_id+os], data[s_r_id:s_r_id+os], data[spn_id:spn_id+os] 
+            s_l, s_r, spn = data[s_l_id], data[s_r_id], data[spn_id] 
             a, b = 0, 0
             # 原点 = 右肩から左肩にかけた辺と胸からの垂線の交点
             for i in range(os):
@@ -623,14 +591,26 @@ class CCA(QtGui.QWidget):
                 shift_pose.append(dt)
             return shift_pose
 
-        #data = np.array(data)
-        # 左肩4, 右肩7(カットせずに数えた場合のjoint indexは8), 胸1
-        offset = 3
+        def data_set(data, os):
+            ds = np.reshape(data, (len(data)/os, os))
+            return ds
+
+        def data_reset(data):
+            data = np.array(data)
+            ds = np.reshape(data, (data.shape[0]*data.shape[1], ))
+            return ds
+    
+
+        #データを一旦xyzを配列のパックに戻す
+        data = data_set(data, os)
+
+        # 左肩 4, 右肩 8(カットせずに数えた場合のjoint index), 胸 1 
         s_l_id, s_r_id, spn_id = 4, 7, 1
+
         # 原点の計算
-        org = calc_org(data, s_l_id, s_r_id, spn_id, offset)
+        org = calc_org(data, s_l_id, s_r_id, spn_id, os)
         # 法線を求める
-        normal = calc_normal(data[s_l_id:s_l_id+offset], data[spn_id:spn_id+offset], data[s_r_id:s_r_id+offset])
+        normal = calc_normal(data[s_l_id], data[spn_id], data[s_r_id])
         # 法線の角度方向にposeを回転
         th_z = np.arctan2(normal[1], normal[0])-np.arctan2(org[1], org[0]) #z軸回転(法線と原点の間の角度)
         th_y = np.arctan2(normal[2], normal[0])-np.arctan2(org[2], org[0]) #y軸回転 
@@ -638,19 +618,21 @@ class CCA(QtGui.QWidget):
         #orgをx軸上に変換する
         th_z = np.arctan2(org[1], org[0])
         th_y = np.arctan2(org[2], org[0])
-        rot_pose_norm = calc_rot_pose(rot_pose, th_z, th_y, np.array([0,0,0]))
+        rot_pose_norm = calc_rot_pose(rot_pose, th_z, th_y, np.array([1,0,0]))
         # 変換後のorg
-        rot_org = calc_org(rot_pose_norm, s_l_id, s_r_id, spn_id)
+        rot_org = calc_org(rot_pose_norm, s_l_id, s_r_id, spn_id, os)
         # orgのxを特定の値に移動する
-        s = [1,0,0]
+        s = [0,0,0]
         shift_pose = calc_shift_pose(rot_pose_norm, rot_org, s)
-        shift_org = calc_org(shift_pose, s_l_id, s_r_id, spn_id)
-        return shift_pose, shift_org 
+        shift_org = calc_org(shift_pose, s_l_id, s_r_id, spn_id, os)
 
+        pose = data_reset(shift_pose)
+        return pose, shift_org 
 
 
     def select_datas(self, data1, data2):
-        self.sIdx = [0,1,2,3,4,5,6,8,9,10,12,13,14,16,17,18,20]
+        #self.sIdx = [0,1,2,3,4,5,6,8,9,10,12,13,14,16,17,18,20]
+        self.sIdx = [0,1,2,3,4,5,6,8,9,10,12,16,20]
         new_sid = [sid*3+i  for sid in self.sIdx for i in xrange(3)]
         self.sIdx = new_sid
         #print self.sIdx
@@ -674,7 +656,7 @@ class CCA(QtGui.QWidget):
         Xc = np.array(Xp).T
         return Xc
 
-    def low_std_cut_joints(self, X, th):
+    def std_cut_joints(self, X, th):
         exts = []
         std_tmps = []
 
@@ -693,6 +675,31 @@ class CCA(QtGui.QWidget):
         if len(exts) == 0:
             exts.append(np.array(std_tmps).argmax())
         """
+        return exts
+    
+    #ばらつき順位三位までのidxを返す(配列)
+    def order_std_cut_joints(self, X, od, th):
+        exts = []
+        stds = []
+        std_tmps = []
+
+        for i, xdata in enumerate(np.array(X).T):
+            Xstd = np.std(np.array(xdata))
+            std_tmps.append(Xstd)
+            if Xstd >= th:
+                exts.append(i)
+                stds.append((i, Xstd))#idxとstdをタプルで保持
+
+        """
+        #もしthを超えるidxがod以上なら
+        #output = []
+        if len(stds)>od:
+            exts = []
+            st = sorted(stds, key=itemgetter(1), reverse=True)
+            for i in range(od):
+                exts.append(st[i][0])#idxだけを出力する
+            #print exts
+        """ 
         return exts
         
 
@@ -715,15 +722,24 @@ class CCA(QtGui.QWidget):
     # 使用するjointのインデックスを返す(配列)
     def ex_joints(self, X, th):
         exts = []
+        sums = []
         L = X.shape[0]
         W = X.shape[1] 
         for d in range(W):
-            sum = 0
+            sum_tmp = 0
             for n in range(L-1):
-                sum += np.fabs(X[n+1, d] - X[n, d])           
-            if sum > th:
+                sum_tmp += np.fabs(X[n+1, d] - X[n, d])           
+            if sum_tmp > th:
                 exts.append(d)
+            sums.append(sum_tmp)
+        # もしひとつも閾値thを超えなければ,最大を返す
+        """
+        if len(exts) == 0:
+            exts.append(np.array(sums).argmax())
+        """
         return exts
+
+
 
 
     def cca_exec(self, data1, data2):
@@ -750,15 +766,15 @@ class CCA(QtGui.QWidget):
         #row->colの順番で回したほうが効率いい
 
         #plt.ion()
+        od = 3
         for i in tqdm.tqdm(xrange(self.dtmr)):
             for j in xrange(self.frms*2+1):
                 if self.frms+i-j >= 0 and self.frms+i-j < self.dtmr:
                     u1 = data1[i:i+self.wins, :]                
                     u2 = data2[self.frms+i-j:self.frms+i-j+self.wins,:]
 
-                    j1, j2 = self.low_std_cut_joints(u1, self.th), self.low_std_cut_joints(u2, self.th)
-                    # j1, j2 = self.ex_joints(u1, self.th), self.ex_joints(u2, self.th)
-                    #u1, u2 = self.low_var_cut(u1, 0.001), self.low_var_cut(u2, 0.001)
+                    j1, j2 = self.order_std_cut_joints(u1, od, self.th), self.order_std_cut_joints(u2, od, self.th)
+                    #j1, j2 = self.ex_joints(u1, self.th), self.ex_joints(u2, self.th)
                     
                     #print u1[:,j1]
                     if len(j1) < 1 or len(j2) < 1: 
@@ -786,6 +802,7 @@ class CCA(QtGui.QWidget):
         return np.corrcoef(data1.T, data2.T)[0][1]
 
     def cca(self, X, Y, j1, j2):
+        # ref: https://gist.github.com/satomacoto/5329310
         '''
         正準相関分析
         http://en.wikipedia.org/wiki/Canonical_correlation
@@ -815,13 +832,15 @@ class CCA(QtGui.QWidget):
         sqy = SLA.sqrtm(SLA.inv(SYY)) # SYY^(-1/2)
         M = np.dot(np.dot(sqx, SXY), sqy.T) # SXX^(-1/2) * SXY * SYY^(-T/2)
         A, r, Bh = SLA.svd(M, full_matrices=False)
-        B = Bh.T      
-        #r = self.reg*r
-        #print r.shape, A.shape
-        #Wx = []*self.dtd
+        B = Bh.T     
+
+        # 基底変換
+        A = np.dot(sqx, A)
+        B = np.dot(sqy, B)
+
         Wx = np.zeros([self.dtd])
         Wy = np.zeros([self.dtd])
-        #Wy = []*self.dtd
+
         Wx[j1] = A[:,0]
         Wy[j2] = B[:,0]
         return r[0], Wx, Wy
