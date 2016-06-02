@@ -2,23 +2,15 @@
 # -*- coding: utf-8 -*-
 
 """
+2016.6.1
+hd5にposeデータを保存
+
 2016.5.26
 座標変換した
 
 2016.4.29
 低周波のデータをカットする
 各データの時系列変化の積算をとり、任意の閾値でカット
-
-2016.4.20
-データを複数回に分けて保存する
-でかすぎるデータを一気に保存すると強制終了
-
-2016.4.5
-データの保存形式を変更する
-見やすくする+メモリ節約のため
-
-2016.3.24
-x, y, zを利用する
 
 """
 
@@ -309,20 +301,22 @@ class CCA(QtGui.QWidget):
 
         # input file
         self.fname = str(self.txtSepFile.text())
-        self.data1, self.data2, self.dts, self.dtd = self.json_pose_input(self.fname)
-        self.times = self.json_time_input(self.fname)
-        # select joints
-        self.data1, self.data2 = self.select_datas(self.data1, self.data2)
+        self.raw_data1, self.raw_data2, self.dts, self.dtd = self.json_pose_input(self.fname)
+
         # if data is big then...
         start, end = int(self.dataStart.text()), int(self.dataEnd.text())
-        self.data1, self.data2, self.start, self.end = self.cut_datas(self.data1, self.data2, start, end)
+        self.raw_data1, self.raw_data2, self.start, self.end = self.cut_datas(self.raw_data1, self.raw_data2, start, end)
+        self.times = self.json_time_input(self.fname, self.start, self.end) # データをカットしてない
+
+        # select joints
+        sidx = [0,1,2,3,4,5,6,8,9,10,12,16,20] # 選択したjointのindex
+        self.data1, self.data2 = self.select_data(self.raw_data1, sidx), self.select_data(self.raw_data2, sidx)
+
         # data size update
         self.pre_dtd = self.dtd
         self.dts, self.dtd = self.data1.shape
-        # data normalization
-        #self.data1, self.data2, self.org1, self.org2 = self.normalize_datas(self.data1, self.data2)
 
-        #一旦消してた
+        # data normalization
         self.data1, self.org1 = self.normalize_data(self.data1)
         self.data2, self.org2 = self.normalize_data(self.data2)
         #self.org1, self.org2 = 0, 0
@@ -391,7 +385,7 @@ class CCA(QtGui.QWidget):
 
         return np.array(datas[0]), np.array(datas[1]), ds, dd*dp
 
-    def json_time_input(self, filename):
+    def json_time_input(self, filename, start, end):
         f = open(filename, 'r')
         jD = json.load(f)
         f.close()
@@ -399,6 +393,7 @@ class CCA(QtGui.QWidget):
         if jD[0]["datas"][0].has_key("time"): 
             for tobj in jD[0]["datas"]:
                 times.append(tobj["time"])
+            times = times[start:end]
         else:
             print "[WARN] no time data!"
         return times        
@@ -416,7 +411,7 @@ class CCA(QtGui.QWidget):
             p_grp.create_dataset("dtd",data=self.dtd)
             p_grp.create_dataset("pre_dtd",data=self.pre_dtd)
             p_grp.create_dataset("dts",data=self.dts) 
-            p_grp.create_dataset("fname",data=self.fname)
+            #p_grp.create_dataset("fname",data=self.fname)
             p_grp.create_dataset("sidx",data=self.sIdx)
             p_grp.create_dataset("reg",data=self.reg)
             p_grp.create_dataset("th",data=self.th)
@@ -424,9 +419,17 @@ class CCA(QtGui.QWidget):
             p_grp.create_dataset("org2",data=self.org2)
             c_grp=f.create_group("cca")
             c_grp.create_dataset("times", data=self.times)
+
+            #変形したデータ
             d_grp=c_grp.create_group("data")
             d_grp.create_dataset("data1", data=self.data1)
             d_grp.create_dataset("data2", data=self.data2)
+
+            #生データ
+            rd_grp=c_grp.create_group("raw_data")
+            rd_grp.create_dataset("raw_data1",data=self.raw_data1)
+            rd_grp.create_dataset("raw_data2",data=self.raw_data2)
+
             r_grp=c_grp.create_group("r")
             wx_grp=c_grp.create_group("wx")
             wy_grp=c_grp.create_group("wy")
@@ -442,14 +445,7 @@ class CCA(QtGui.QWidget):
                     wx_v_grp.create_dataset(str(j),data=self.wx_m[:,:,j,i])
                     wy_v_grp.create_dataset(str(j),data=self.wy_m[:,:,j,i])
             """
-            """
-            # jointsの保存,ぶっちゃけいらないかも
-            print self.js1
-            print self.js2
-            js_grp=c_grp.create_group("js")
-            js_grp.create_dataset(str(0), data=self.js1)
-            js_grp.create_dataset(str(1), data=self.js2)
-            """
+
             #save_dimen = 1
             for i in xrange(save_dimen):
                 r_grp.create_dataset(str(i),data=self.r_m[:,:])
@@ -463,78 +459,6 @@ class CCA(QtGui.QWidget):
             f.flush()
         print "save end:",datetime.now().strftime("%Y/%m/%d %H:%M:%S")
 
-    def save_params2(self):
-        save_dimen=1 #self.dtd
-        savefile = "save_"+ self.fname.lstrip("/home/uema/catkin_ws/src/pose_cca/datas/")
-        savefile = savefile.rstrip(".json")+"_w"+str(self.wins)+"_f"+str(self.frms) +"_d"+str(self.dtd)+"_r"+str(self.reg)+"_s"+str(self.start)+"_e"+str(self.end) 
-        filepath = savefile+".h5"
-        print filepath+" is save"
-        with h5py.File(filepath, 'w') as f:
-            p_grp=f.create_group("prop")
-            p_grp.create_dataset("wins",data=self.wins)
-            p_grp.create_dataset("frms",data=self.frms)
-            p_grp.create_dataset("dtd",data=self.dtd)
-            p_grp.create_dataset("pre_dtd",data=self.pre_dtd)
-            p_grp.create_dataset("dts",data=self.dts) 
-            p_grp.create_dataset("fname",data=self.fname)
-            p_grp.create_dataset("sidx",data=self.sIdx)
-            p_grp.create_dataset("reg",data=self.reg)
-            p_grp.create_dataset("th",data=self.th)
-            p_grp.create_dataset("org1",data=self.org1)
-            p_grp.create_dataset("org2",data=self.org2)
-
-            c_grp=f.create_group("cca")
-            c_grp.create_dataset("times", data=self.times)
-
-            # 生データ保存
-            d_grp=c_grp.create_group("data")
-            d_grp.create_dataset("data1", data=self.data1)
-            d_grp.create_dataset("data2", data=self.data2)
-
-            # 処理結果の保存
-            rslt_dts = self.r_m.shape[1]
-            rng = 1000
-            p_grp.create_dataset("rng",data=rng)
-
-            sp = 0
-            while True:
-                print "sp:",sp
-                if (sp+1)*rng < rslt_dts:
-                    print "rslt_dts:", rslt_dts, "rng*(sp+1)",rng*(sp+1)
-                    sp_grp = c_grp.create_group(str(sp*rng)+"-"+str((sp+1)*rng))
-                    r_grp = sp_grp.create_group("r")
-                    wx_grp = sp_grp.create_group("wx")
-                    wy_grp = sp_grp.create_group("wy")
-                    for i in tqdm.tqdm(xrange(save_dimen)):
-                        r_grp.create_dataset(str(i),data=self.r_m[:,sp*rng:(sp+1)*rng,i])
-                        wx_v_grp = wx_grp.create_group(str(i))
-                        wy_v_grp = wy_grp.create_group(str(i))
-                        for j in tqdm.tqdm(xrange(self.dtd)):
-                            wx_v_grp.create_dataset(str(j),data=self.wx_m[:,sp*rng:(sp+1)*rng,j,i])
-                            wy_v_grp.create_dataset(str(j),data=self.wy_m[:,sp*rng:(sp+1)*rng,j,i])
-                            f.flush()
-                else:
-                    sp_grp = c_grp.create_group(str(sp*rng)+"-"+str(rslt_dts-1))
-                    r_grp = sp_grp.create_group("r")
-                    wx_grp = sp_grp.create_group("wx")
-                    wy_grp = sp_grp.create_group("wy")
-                    for i in tqdm.tqdm(xrange(save_dimen)):
-                        r_grp.create_dataset(str(i),data=self.r_m[:,sp*rng:rslt_dts-1,i])
-                        wx_v_grp = wx_grp.create_group(str(i))
-                        wy_v_grp = wy_grp.create_group(str(i))
-                        for j in tqdm.tqdm(xrange(self.dtd)):
-                            wx_v_grp.create_dataset(str(j),data=self.wx_m[:,sp*rng:rslt_dts-1,j,i])
-                            wy_v_grp.create_dataset(str(j),data=self.wy_m[:,sp*rng:rslt_dts-1,j,i])
-                            f.flush()
-                    break
-                sp += 1
-            f.flush()
-            f.close()
-        print "save end:",datetime.now().strftime("%Y/%m/%d %H:%M:%S")
-
-
-    def id_conv(self, idx):
-        return [idx*3+i for i in range(3)]
 
     def normalize_data(self, data):
         datas = []
@@ -631,21 +555,39 @@ class CCA(QtGui.QWidget):
 
 
     def select_datas(self, data1, data2):
-        #self.sIdx = [0,1,2,3,4,5,6,8,9,10,12,13,14,16,17,18,20]
-        self.sIdx = [0,1,2,3,4,5,6,8,9,10,12,16,20]
-        new_sid = [sid*3+i  for sid in self.sIdx for i in xrange(3)]
-        self.sIdx = new_sid
-        #print self.sIdx
+        idx = [0,1,2,3,4,5,6,8,9,10,12,16,20] # 選択したjointのindex
+        new_sid = [sid*3+i  for sid in idx for i in range(3)] # 選択したjointのxyzのindexの作成
+        self.sIdx = new_sid[:] # [:]は深いコピーのため
+        print "select id:", self.sIdx # 選択したjointの確認
         return data1[:,self.sIdx],  data2[:,self.sIdx]
 
+    def select_data(self, data, idx):
+        self.sIdx = [sid*3+i  for sid in idx for i in range(3)] # 選択したjointのxyzのindexの作成
+        return data[:,self.sIdx]
+
+
+    #長すぎるデータのカット
     def cut_datas(self, data1, data2, start, end): 
         #print "s/e",start, end
-        if start <= end and end <= self.dts:
-            return data1[start:end,:], data2[start:end,:], start, end
+        st, ed = 0, 0
+        if start < end:
+            if 0 <= start and end <= self.dts:
+                st, ed = start, end
+            elif 0 > start and end <= self.dts:
+                print "[WARN] start < 0. So start = 0."
+                st, ed = 0, end
+            elif 0 <= start and end > self.dts:
+                print "[WARN] end > data_size. So, end = data_size."
+                st, ed = start, self.dts
+            else:
+                print "[WARN] start < 0 and end > data_size. So, no cut."
+                st, ed = 0, self.dts
         else:
-            print "no cut"
-            return data1, data2, 0, self.dts
-    
+            print "[WARN] start > end. So, no cut."
+            st, ed = 0, self.dts
+
+        return data1[st:ed,:], data2[st:ed,:], st, ed
+
     def low_var_cut(self, X, th): 
         Xp = []
         for i, xdata in enumerate(np.array(X).T):
@@ -665,11 +607,7 @@ class CCA(QtGui.QWidget):
             std_tmps.append(Xstd)
             if Xstd >= th:
                 exts.append(i)
-                #print i
-                #print xdata 
-                #print Xstd
 
-        #print "joints len:",len(std_tmps)
         # もしひとつも閾値thを超えなければ,最大を返す
         """
         if len(exts) == 0:
@@ -739,7 +677,22 @@ class CCA(QtGui.QWidget):
         """
         return exts
 
+    # 閾値を越えた変化の個数で判別する
+    def diff_num_joints(self, X, th):
+        exts = []
+        sums = []
+        L = X.shape[0]
+        W = X.shape[1] 
+        for d in range(W):
+            sum_tmp = 0
+            for n in range(L-1):
+                diff = np.fabs(X[n+1, d] - X[n, d])  
+                if diff > th:
+                    sum_tmp += 1
+            if sum_tmp > (L-1)*1/3: #2/3以上変化してたら
+                exts.append(d)
 
+        return exts
 
 
     def cca_exec(self, data1, data2):
@@ -756,8 +709,8 @@ class CCA(QtGui.QWidget):
         # 使われたデータを可視化したいのでそのためのバッファ
         #tmp_x = np.zeros([self.frms*2+1, self.dtmr, self.dtd, self.wins])
         #tmp_y = np.zeros([self.frms*2+1, self.dtmr, self.dtd, self.wins])
-        tmp_x =[[[[]]]*self.dtmr]*(self.frms*2+1)
-        tmp_y =[[[[]]]*self.dtmr]*(self.frms*2+1)
+        #tmp_x =[[[[]]]*self.dtmr]*(self.frms*2+1)
+        #tmp_y =[[[[]]]*self.dtmr]*(self.frms*2+1)
 
         js1 = [[[]]*self.dtmr]*(self.frms*2+1)
         js2 = [[[]]*self.dtmr]*(self.frms*2+1)
@@ -772,10 +725,10 @@ class CCA(QtGui.QWidget):
                 if self.frms+i-j >= 0 and self.frms+i-j < self.dtmr:
                     u1 = data1[i:i+self.wins, :]                
                     u2 = data2[self.frms+i-j:self.frms+i-j+self.wins,:]
-
-                    j1, j2 = self.order_std_cut_joints(u1, od, self.th), self.order_std_cut_joints(u2, od, self.th)
+                    #j1, j2 = self.order_std_cut_joints(u1, od, self.th), self.order_std_cut_joints(u2, od, self.th)
+                    j1, j2 = self.std_cut_joints(u1, self.th), self.std_cut_joints(u2, self.th)
                     #j1, j2 = self.ex_joints(u1, self.th), self.ex_joints(u2, self.th)
-                    
+                    #j1, j2 = self.diff_num_joints(u1, self.th), self.diff_num_joints(u2, self.th)
                     #print u1[:,j1]
                     if len(j1) < 1 or len(j2) < 1: 
                         r_m[j][i] = 0

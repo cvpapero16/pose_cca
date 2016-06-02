@@ -2,8 +2,9 @@
 # -*- coding: utf-8 -*-
 
 """
-2016.5.26
-座標変換を可視化
+2016.6.1
+hd5に保存したposeデータを読み込み
+jsonからのposeデータ読み込みを廃止
 
 2016.5.17
 pose_cca3の可視化
@@ -68,13 +69,13 @@ class Plot():
         self.wy_area = self.fig.add_subplot(427)
         self.wy_area.tick_params(labelsize=self.fs)
         self.wy_area.set_title("user2 vec",fontsize=self.fs+1)
-        self.sig_area = self.fig.add_subplot(426)
-        self.sig_area.tick_params(labelsize=self.fs)
-        self.sig_area.set_title("cca:",fontsize=self.fs+1)
+        self.sig1_area = self.fig.add_subplot(426)
+        self.sig1_area.tick_params(labelsize=self.fs)
+        self.sig1_area.set_title("sig1:",fontsize=self.fs+1)
 
-        self.fft_area = self.fig.add_subplot(428)
-        self.fft_area.tick_params(labelsize=self.fs)
-        self.fft_area.set_title("fft:",fontsize=self.fs+1)
+        self.sig2_area = self.fig.add_subplot(428)
+        self.sig2_area.tick_params(labelsize=self.fs)
+        self.sig2_area.set_title("sig2:",fontsize=self.fs+1)
 
         self.cbar = None
         self.fig.tight_layout()
@@ -111,8 +112,11 @@ class Plot():
 
     #プロットエリアがクリックされた時
     def on_click(self, event):
+
         col = int(event.xdata)
         row = int(event.ydata)
+        # 決め打ちしてみる, 520a2_1500-3000, 467, 412
+
         print 'cca(%d, %d) r:%f'%(row, col, self.r_m[row][col])
         self.draw_weight(row, col)
 
@@ -217,27 +221,36 @@ class Plot():
         #j1, j2は,手先などのデータをカットした後のインデックス(全51次元)だから、75次元のデータとマッチングしない
         #print "j1",len(j1),j1
         #print "j2",len(j2),j2
+      
+
+        # 決め打ちしてみる, 520a2_1500-3000, 467, 412
+        #col, row = 470, 124
         
         dr1 = d1[col:col+self.wins,:]
         dr2 = d2[col+(width-row):col+(width-row)+self.wins,:]
+
+        # j2だけ、決め打ちする
+        #j2 = [20, 30, 31, 32]
         ds1 = dr1[:,j1]
         ds2 = dr2[:,j2]
         #ds1 = d1[col:col+self.wins,j1]
         #ds2 = d2[col+(width-row):col+(width-row)+self.wins,j2] #rowとcolを使ってデータのオフセットを表現
 
-        """
-        wxlist=[0]*len(self.sidx)
-        for (i, d) in enumerate(self.sidx):
-            self.wxlist[i] = self.wx_m[d, row, col]
-        """
         # 基底変換する
         #wx = np.dot(self.calc_sq(ds1), self.wx_m[j1, row, col])
         #wy = np.dot(self.calc_sq(ds2), self.wy_m[j2, row, col])
-
-        # 正準値を可視化してみる
-        #f = np.dot(ds1, wx)
-        #g = np.dot(ds2, wy)
         
+        
+        # 正準値を可視化してみる
+        wx, wy = self.wx_m[j1, row, col], self.wy_m[j2, row, col]
+        f, g = np.dot(ds1, wx), np.dot(ds2, wy)
+        #f, g = ds1, ds2
+        # f, gはn行1列だから以下が成立
+        maxf, maxg = f.max(), g.max()
+        rng_max = maxf+1 if maxf > maxg else maxg+1
+        minf, ming = f.min(), g.min()
+        rng_min = minf-1 if minf < ming else ming-1
+
         #print "f",f.shape
 
         # 正準相関の値
@@ -252,29 +265,29 @@ class Plot():
         #print "corr(ds1, ds2)", corr
         #print ds2.shape
         
-        ds1_m = np.std(ds1, axis=0).mean()
-        ds2_m = np.std(ds2, axis=0).mean()
+        #ds1_m = np.std(ds1, axis=0).mean()
+        #ds2_m = np.std(ds2, axis=0).mean()
         #ds1_m = np.sum(np.fabs(ds1), axis=0)
         #ds2_m = np.sum(np.fabs(ds2), axis=0)
 
-        self.sig_area.cla()
-        self.sig_area.plot(ds1, label="u1", alpha=0.5)
-        #self.sig_area.plot(f, label="u1", alpha=0.5)
-        #self.sig_area.plot(ds2, color="g", label="u2", alpha=0.5)
-        self.sig_area.set_title("user1 cca:"+str(self.r_m[row][col])+", std_mean:"+str(ds1_m),fontsize=self.fs+1)
-        #self.sig_area.set_ylim(-0.6, 0.6)
+        #rng = 1
+        self.sig1_area.cla()
+        #self.sig1_area.plot(ds1, label="u1", alpha=0.5)
+        self.sig1_area.plot(f, label="u1", alpha=0.5)
+        self.sig1_area.set_title("user1 cca:"+str(self.r_m[row][col]), fontsize=self.fs+1)
+        self.sig1_area.set_ylim(rng_min, rng_max)
 
-        self.fft_area.cla()
-        self.fft_area.plot(ds2, label="u2", alpha=0.5)
-        #self.fft_area.plot(g, label="u2", alpha=0.5)
-        self.fft_area.set_title("user2 cca:"+str(self.r_m[row][col])+", std_mean:"+str(ds2_m),fontsize=self.fs+1)
-        #self.fft_area.set_ylim(-0.6, 0.6)
+        self.sig2_area.cla()
+        #self.sig2_area.plot(ds2, label="u2", alpha=0.5)
+        self.sig2_area.plot(g, label="u2", alpha=0.5)
+        self.sig2_area.set_title("user2 cca:"+str(self.r_m[row][col]), fontsize=self.fs+1)
+        self.sig2_area.set_ylim(rng_min, rng_max)
 
         """
         X, Y = np.fft.fft(f), np.fft.fft(g)
-        self.fft_area.cla()
-        self.fft_area.plot(X, color="r", label="u1", alpha=0.5)
-        self.fft_area.plot(Y, color="g", label="u2", alpha=0.5)
+        self.sig2_area.cla()
+        self.sig2_area.plot(X, color="r", label="u1", alpha=0.5)
+        self.sig2_area.plot(Y, color="g", label="u2", alpha=0.5)
         """
 
         self.fig.canvas.draw()
@@ -518,21 +531,23 @@ class CCA(QtGui.QWidget):
         return  np.array(r_m), np.array(wx_m), np.array(wy_m), org1, org2
 
     def load_datas_poses(self, filename):
-        with h5py.File(filename) as f:  
-            fposename = f["/prop/fname"].value
-            print "open pose file:",fposename
-            fp = open(fposename, 'r')
-            jsp = json.load(fp)
+        with h5py.File(filename) as f:
             #f.close()
             data1 = f["/cca/data/data1"].value
             data2 = f["/cca/data/data2"].value
-            if jsp[0]["datas"][0].has_key("jdata"):
-                ps = len(jsp[0]["datas"][0]["jdata"]) 
-                poses=[[[[u["datas"][j]["jdata"][p][x]for x in range(3)]for p in range(ps)]for j in range(self.dts)]for u in jsp]
-            else:
-                print "no poses"
-                poses = [[0],[0]]
-        return data1, data2, poses[0], poses[1]
+            raw_data1 = f["/cca/raw_data/raw_data1"].value
+            raw_data2 = f["/cca/raw_data/raw_data2"].value
+            pose1, pose2 = [], []
+
+            for p1, p2 in zip(raw_data1, raw_data2):
+                pose1.append(self.data_set(p1, 3))
+                pose2.append(self.data_set(p2, 3))
+
+        return data1, data2, pose1, pose2
+
+    def data_set(self, data, os):
+        return np.reshape(data, (len(data)/os, os))
+
 
     def jidx_nidx_input(self):
         jidx = [[3, 2, 20, 1, 0],
@@ -676,12 +691,16 @@ class CCA(QtGui.QWidget):
                 # points
                 pmsg = self.rviz_obj(u, 'p'+str(u), 7, [0.03, 0.03, 0.03], 0)
                 pmsg.points = [self.set_point(p) for p in np.array(pos[i])[self.nidx]]
+                #pmsg.points = [self.set_point(p) for p in np.array(pos[i])]
                 msgs.markers.append(pmsg)
                 
+                """
                 # origin points
                 omsg = self.rviz_obj(u, 'o'+str(u), 7, [0.03, 0.03, 0.03], 1)
                 omsg.points = [self.set_point(orgs[u])]
                 msgs.markers.append(omsg)
+                """
+
                 
                 # lines
                 lmsg = self.rviz_obj(u, 'l'+str(u), 5, [0.005, 0.005, 0.005], 2)
@@ -698,10 +717,12 @@ class CCA(QtGui.QWidget):
                 tmsg.text = "user_"+str(u+1)
                 msgs.markers.append(tmsg) 
                 
+                
                 # arrow
                 if len(wts) != 0:
                     amsg = self.rviz_obj(u, 'a'+str(u), 5,  [0.005, 0.005, 0.005], 1) 
-                    df = 0.3
+                    num = 0.3
+                    df = num/max(np.fabs(wts[u]))
                     for (ni, nid) in enumerate(self.nidx):
                         amsg.points.append(self.set_point(pos[i][nid]))
                         amsg.points.append(self.set_point(pos[i][nid], addx=wts[u][ni*3]*df))
@@ -710,7 +731,8 @@ class CCA(QtGui.QWidget):
                         amsg.points.append(self.set_point(pos[i][nid]))
                         amsg.points.append(self.set_point(pos[i][nid], addz=wts[u][ni*3+2]*df))
                     msgs.markers.append(amsg) 
-              
+                
+
                 if u == 0 and sq > r and sq < r+wins:    
                     #print "now interaction", u
                     npmsg = self.rviz_obj(u, 'np'+str(u), 7, [0.05, 0.05, 0.05], 3, 0.1)
